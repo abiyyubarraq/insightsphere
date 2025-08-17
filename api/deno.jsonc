@@ -1,0 +1,25 @@
+{
+	"compilerOptions": {
+		"allowJs": true,
+		"strict": true,
+		"lib": ["dom", "dom.iterable", "es2022"],
+		"jsx": "react-jsx",
+		"jsxImportSource": "hono/jsx"
+	},
+	"tasks": {
+		"dev": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run --watch main.ts",
+		"start": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run main.ts",
+		"test": "deno test --allow-net --allow-env --allow-read --allow-write"
+	},
+	"imports": {
+		"hono": "npm:hono@^4.0.0",
+		"hono/cors": "npm:hono@^4.0.0/cors",
+		"hono/logger": "npm:hono@^4.0.0/logger",
+		"openai": "npm:openai@^4.0.0",
+		"@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^0.20.0",
+		"qdrant-js": "npm:@qdrant/js-client-rest@^1.8.0",
+		"@supabase/supabase-js": "npm:@supabase/supabase-js@^2.38.0",
+		"firebase-admin": "npm:firebase-admin@^12.0.0"
+	}
+}
+ 

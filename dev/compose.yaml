@@ -1,0 +1,128 @@
+services:
+  # Vector Database
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Document Parser Service
+  doc-parser:
+    build:
+      context: ../doc-parser
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - GIN_MODE=debug
+    volumes:
+      - ../doc-parser:/app
+      - /app/doc-parser
+      - shared_temp:/tmp
+    depends_on:
+      - qdrant
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    # Auto-rebuild on Go file changes
+    develop:
+      watch:
+        - action: rebuild
+          path: ../doc-parser
+          ignore:
+            - ../doc-parser/doc-parser
+
+  # API Service
+  api:
+    image: denoland/deno:2.4.2
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - PORT=8000
+      - QDRANT_URL=http://qdrant:6333
+      - DOC_PARSER_URL=http://doc-parser:8080
+    working_dir: /app
+    volumes:
+      - ../api:/app
+      - ../shared:/shared
+      - ../vector-utils:/vector-utils
+      - shared_temp:/tmp
+    command: >
+      sh -c "deno run --allow-net --allow-env --allow-read --allow-write --watch main.ts"
+    depends_on:
+      - qdrant
+      - doc-parser
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Development Server
+  # frontend:
+  #   image: node:20-alpine
+  #   ports:
+  #     - "5173:5173"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - NODE_ENV=development
+  #     - VITE_API_URL=http://localhost:8000
+  #   working_dir: /app
+  #   volumes:
+  #     - ../frontend:/app
+  #     - /app/node_modules
+  #   command: >
+  #     sh -c "npm install && npm run dev -- --host"
+  #   depends_on:
+  #     - api
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:5173"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   # Auto-reload on frontend file changes (Vite handles this automatically)
+  #   develop:
+  #     watch:
+  #       - action: sync
+  #         path: ../frontend/src
+  #         target: /app/src
+
+
+  # # Redis (for caching and session storage)
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   command: redis-server --appendonly yes
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+volumes:
+  qdrant_data:
+  redis_data:
+  shared_temp:
+
+networks:
+  default:
+    driver: bridge 

@@ -1,0 +1,105 @@
+---
+alwaysApply: true
+---
+
+**🧠 System Instruction for Cursor (InsightSphere Monorepo)**
+
+You are an LLM pair-programming assistant for the **InsightSphere** monorepo.  
+The workspace consists of a SvelteKit frontend, a Deno API/RAG service, a Go document-parser microservice, shared utilities, and supporting infrastructure.  
+The application allows users to create multiple projects, upload documents, and run RAG-based AI queries over those documents.
+
+---
+## 🏗️ Project Architecture
+
+- **`frontend/`** – SvelteKit 2 + TypeScript + TailwindCSS v4 + DaisyUI + Lucide icons
+- **`api/`** – Deno (≥2.4) + Hono for API + RAG orchestration
+- **`doc-parser/`** – Go 1.22 + UniPDF/gooxml for PDF/DOCX parsing
+- **`vector-utils/`** – Qdrant client helpers for embedding storage/retrieval
+- **`shared/`** – Shared types and utilities
+- **`docker/`, `dev/`** – Local development & deployment configs
+
+---
+## 🔍 Behavior & Tone
+
+- Be **precise** and **minimal** in code suggestions.
+- Follow **existing conventions** in the repo.
+- Use **clear inline comments** for non-trivial logic.
+- Never propose placeholder or incomplete logic unless explicitly requested.
+- Ensure code is **TypeScript strict** in both frontend and backend.
+
+---
+## 📁 Module Systems & Imports
+
+### Frontend (`frontend/`)
+- File-based routing in `src/routes`
+- Reusable UI components in `src/lib`
+- Styling: TailwindCSS + DaisyUI theme utilities
+- Icons: `lucide-svelte` as the standard icon set
+- Use DaisyUI tokens (`bg-primary`, `border-primary`) over raw hex codes when possible
+
+### API (`api/`)
+- Written in TypeScript for Deno
+- ES modules with `import_map.json`
+- Endpoints under `/v1/`
+- JSON responses use camelCase keys and ISO 8601 dates
+- SSE (`text/event-stream`) for streaming AI chat tokens
+- Endpoints validate user ownership via Supabase Auth before processing
+
+### Doc-Parser (`doc-parser/`)
+- Go standard library + UniPDF/gooxml for parsing
+- `/parse/pdf` and `/parse/docx` endpoints return:
+  - Parsed text
+  - Per-page metadata
+- Use goroutines for parallel parsing of large files
+
+---
+## 🛠️ Tech-Wide Rules
+
+- CI must pass **Go vet** for Go code
+- Lint & format using **ESLint + Prettier** (`npm run format && npm run lint`)
+- Commit messages follow **Conventional Commits** (`feat(api): add document processing`)
+- Do not embed secrets in code — use environment variables
+- Keep API and parsing code modular (helpers in `/lib` or `/utils`)
+
+---
+## 📜 Document Processing Flow (Milestone 1)
+
+- After file upload to Supabase Storage:
+  1. Call Deno API `/v1/documents/process`
+  2. Fetch file from Supabase Storage (service key)
+  3. Send to Go parser service for extraction
+  4. Chunk text (~500–1000 tokens)
+  5. Generate embeddings via OpenAI API
+  6. Store vectors + metadata in Qdrant
+  7. Update `documents` table with status `"ready"`
+
+- All processing must:
+  - Include `user_id` and `project_id` in metadata
+  - Enforce per-user and per-project isolation
+
+---
+## 🧑‍💻 Development Workflow
+
+1. Start local stack: `docker compose -f dev/compose.yaml up`
+2. Frontend: `pnpm dev` → `http://localhost:5173`
+3. Backend: `deno task dev` for API, run Go parser service separately
+4. Run `npm run format && npm run lint` before committing
+5. Tests:
+   - Vitest (frontend)
+   - Deno test runner (API)
+   - Go tests (parser)
+
+---
+## 💅 Tailwind & DaisyUI
+
+- Use DaisyUI's theme tokens (`primary`, `secondary`, `accent`) for consistent theming
+- Avoid hard-coded colors unless theme-independent
+- Prefer DaisyUI components for form inputs, buttons, and modals
+
+---
+## 🚫 Constraints
+
+- Do **NOT** log full document contents (only IDs, hashes, and summary logs)
+- Do **NOT** suggest Python or Node.js solutions — Deno & Go only
+- Do **NOT** change the technology stack without explicit request
+- Prevent document uploads >100MB early in processing (both frontend and backend)

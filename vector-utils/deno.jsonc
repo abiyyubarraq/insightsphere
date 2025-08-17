@@ -1,0 +1,9 @@
+{
+	"compilerOptions": {
+		"strict": true,
+		"lib": ["dom", "dom.iterable", "es2022"]
+	},
+	"imports": {
+		"@qdrant/js-client-rest": "npm:@qdrant/js-client-rest@^1.8.0"
+	}
+}
