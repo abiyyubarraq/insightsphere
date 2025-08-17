@@ -191,48 +191,6 @@ insightsphere/
 │   └── start.sh          # Development startup script
 └── MILESTONE_2_PROMPT.md  # Next development phase
 ```
-
-## 🎯 Roadmap
-
-### ✅ Milestone 1 - Document Processing Pipeline (Complete)
-- [x] PDF OCR extraction with page metadata
-- [x] Per-project vector collections
-- [x] Multi-model embedding pipeline
-- [x] Comprehensive testing infrastructure
-
-### 🚧 Milestone 2 - RAG Query API (Next)
-**Target**: Complete AI chat functionality
-- [ ] `POST /v1/projects/:id/query` endpoint
-- [ ] LLM integration (OpenAI GPT-4o)
-- [ ] Source citation system
-- [ ] Streaming response support
-
-See [detailed implementation prompt](./MILESTONE_2_PROMPT.md) for technical specifications.
-
-### 📋 Milestone 3 - Frontend Chat UI
-- [ ] Project dashboard with "Browse Insights" 
-- [ ] Real-time chat interface
-- [ ] Citation links with document preview
-- [ ] Document section jumping
-
-### 🔒 Milestone 4 - Security & RLS
-- [ ] Supabase Row Level Security
-- [ ] Enhanced user/project validation
-- [ ] Audit logging
-
-### ⚡ Milestone 5 - Async Processing
-- [ ] Background document processing
-- [ ] Queue management
-- [ ] Processing status updates
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
