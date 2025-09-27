@@ -172,7 +172,7 @@ insightsphere/
 │   ├── lib/               # Core services
 │   │   ├── qdrantClient.ts      # Vector database operations
 │   │   ├── openaiClient.ts      # OpenAI API integration
-│   │   ├── freeEmbeddingClient.ts # Free embedding alternatives
+│   │   ├── embeddingClient.ts # Free embedding alternatives
 │   │   ├── supabaseClient.ts    # Database & storage operations
 │   │   └── chunkText.ts         # Text processing utilities
 │   ├── routes/            # API endpoints

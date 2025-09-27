@@ -1,11 +1,25 @@
 #!/bin/bash
 
-# InsightSphere Backend Startup Script
-# This script starts all backend services for local development
+# InsightSphere Reset Script
+# This script completely resets all data including Qdrant vectors
+# Use this when you want to start fresh
 
 set -e
 
-echo "🚀 Starting InsightSphere Backend Services..."
+echo "⚠️  RESET MODE: This will DELETE ALL DATA including processed documents!"
+echo "🗑️  This includes:"
+echo "   • All Qdrant vector collections"
+echo "   • All processed document embeddings"
+echo "   • All container data"
+echo ""
+read -p "Are you sure you want to continue? (type 'yes' to confirm): " confirm
+
+if [ "$confirm" != "yes" ]; then
+    echo "❌ Reset cancelled"
+    exit 0
+fi
+
+echo "🚀 Starting InsightSphere with FULL RESET..."
 
 # Check if .env file exists
 if [ ! -f ".env" ]; then
@@ -22,29 +36,23 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Start services with file watching for auto-rebuild
-echo "🐳 Starting Docker services with file watching..."
-echo "💡 Using Docker Compose watch mode for auto-rebuild on file changes"
-
-# Stop any existing containers first (but preserve volumes)
-echo "🛑 Stopping existing containers..."
+echo "🛑 Stopping all containers..."
 docker compose down
 
-echo "🧹 Cleaning up old containers (preserving data volumes)..."
-# Remove old containers but keep volumes (preserves Qdrant data)
-docker compose down --remove-orphans
-# Only prune containers and networks, not volumes
-docker container prune -f
-docker network prune -f
+echo "🗑️  REMOVING ALL DATA (including volumes)..."
+# This removes EVERYTHING including Qdrant data
+docker compose down --volumes --remove-orphans
 
-echo "🔨 Building fresh containers to ensure latest code..."
-# Force rebuild containers to get latest code
+echo "🧹 Cleaning up all Docker resources..."
+docker system prune -af --volumes
+
+echo "🔨 Building fresh containers..."
 docker compose build --no-cache
 
-echo "🚀 Starting containers..."
+echo "🚀 Starting containers with fresh data..."
 docker compose up -d
 
-# Enable watch mode for development (requires Docker Compose v2.22+)
+# Enable watch mode for development
 echo "🔄 Enabling file watch mode..."
 docker compose watch &
 WATCH_PID=$!
@@ -57,7 +65,7 @@ echo "🔍 Checking service health..."
 
 echo -n "  Qdrant: "
 if curl -s http://localhost:6333/health > /dev/null; then
-    echo "✅ Running"
+    echo "✅ Running (fresh database)"
 else
     echo "❌ Not responding"
 fi
@@ -84,11 +92,12 @@ else
 fi
 
 echo ""
-echo "🎉 InsightSphere Backend is ready!"
+echo "🎉 InsightSphere is ready with FRESH DATA!"
 echo ""
-echo "💾 Data Persistence:"
-echo "  Qdrant data is preserved between restarts"
-echo "  Your processed documents and vectors remain intact"
+echo "⚠️  IMPORTANT: All previous data has been deleted!"
+echo "   • You'll need to re-process your documents"
+echo "   • All vector embeddings have been cleared"
+echo "   • Qdrant collections are empty"
 echo ""
 echo "📊 Service URLs:"
 echo "  Frontend:  http://localhost:5173"
@@ -99,17 +108,13 @@ echo ""
 echo "🧪 Test Dashboard:"
 echo "  Browser Tests: http://localhost:8000/v1/test/dashboard"
 echo ""
+echo "📋 Next steps:"
+echo "  1. Process some documents: http://localhost:8000/v1/test/process"
+echo "  2. Test RAG queries: http://localhost:8000/v1/test/rag-query"
+echo ""
 echo "📋 Useful commands:"
 echo "  View logs:        docker compose logs -f"
 echo "  Stop services:    docker compose down"
 echo "  Restart:          docker compose restart"
 echo "  Stop file watch:  kill $WATCH_PID"
-echo ""
-echo "🔧 Additional scripts:"
-echo "  Full reset:       bash dev/reset.sh    (⚠️  deletes all data)"
-echo ""
-echo "🔄 Auto-rebuild enabled:"
-echo "  • Go files (doc-parser): Auto-rebuild on change"
-echo "  • TypeScript files (API): Auto-reload with Deno watch"
-echo "  • Frontend files: Auto-reload with Vite HMR"
 echo ""

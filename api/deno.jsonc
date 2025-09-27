@@ -1,6 +1,5 @@
 {
 	"compilerOptions": {
-		"allowJs": true,
 		"strict": true,
 		"lib": ["dom", "dom.iterable", "es2022"],
 		"jsx": "react-jsx",
@@ -12,6 +11,7 @@
 		"test": "deno test --allow-net --allow-env --allow-read --allow-write"
 	},
 	"imports": {
+		"@huggingface/inference": "npm:@huggingface/inference@^4.7.1",
 		"hono": "npm:hono@^4.0.0",
 		"hono/cors": "npm:hono@^4.0.0/cors",
 		"hono/logger": "npm:hono@^4.0.0/logger",

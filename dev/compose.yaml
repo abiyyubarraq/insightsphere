@@ -47,7 +47,7 @@ services:
 
   # API Service
   api:
-    image: denoland/deno:2.4.2
+    image: denoland/deno:2.5.2
     ports:
       - "8000:8000"
     env_file:
