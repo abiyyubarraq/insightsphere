@@ -22,7 +22,7 @@ Frontend (SvelteKit) ←→ API (Deno + Hono) ←→ Parser (Go) ←→ Storage 
 ### Tech Stack
 
 - **Frontend**: SvelteKit 2 + TypeScript + TailwindCSS + DaisyUI
-- **API**: Deno 2.4+ + Hono + TypeScript
+- **API**: Deno 2.5+ + Hono + TypeScript
 - **Parser**: Go 1.22 + Tesseract OCR + poppler-utils
 - **Vector DB**: Qdrant (per-project collections)
 - **Database**: Supabase (PostgreSQL + Auth + Storage)
@@ -70,7 +70,7 @@ Collection: "insightsphere_user_{userId}_project_{projectId}"
 
 ### Prerequisites
 
-- **Deno 2.4+** - Runtime for API
+- **Deno 2.5+** - Runtime for API
 - **Go 1.22+** - Document parser service
 - **Docker & Docker Compose** - Container orchestration
 - **Node.js 18+** - Frontend development
