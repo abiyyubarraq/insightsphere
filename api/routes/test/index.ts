@@ -556,7 +556,7 @@ export async function testVectorSearch(c: Context) {
           : undefined,
         useProjectCollection: true, // Use per-project collection
         limit: 5,
-        threshold: 0.5,
+        threshold: 0.3,
       },
     );
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -98,7 +99,7 @@ func main() {
 
 	log.Printf("🚀 Document Parser OCR service starting on port %s", port)
 	log.Printf("📋 Endpoints:")
-	log.Printf("   GET  /health      - Health check")
+	log.Printf("   GET  /health      - Health check jembot")
 	log.Printf("   GET  /info        - Service information")
 	log.Printf("   POST /parse/pdf   - PDF OCR parsing")
 	log.Fatal(r.Run(":" + port))
@@ -133,53 +134,12 @@ func parsePDFWithOCR(ctx context.Context, filePath string) (string, []PageData, 
 
 	log.Printf("🖼️ Converted PDF to %d image files", len(imageFiles))
 
-	// Step 2: Perform OCR on each image
-	var allText strings.Builder
-	var pages []PageData
-	successfulPages := 0
-
-	for i, imageFile := range imageFiles {
-		pageNum := i + 1
-		log.Printf("🔍 Processing page %d/%d: %s", pageNum, len(imageFiles), filepath.Base(imageFile))
-
-		// Check context for cancellation
-		select {
-		case <-ctx.Done():
-			return "", nil, nil, fmt.Errorf("processing cancelled: %w", ctx.Err())
-		default:
-		}
-
-		// Perform OCR on the image
-		pageText, err := performOCR(ctx, imageFile)
-		if err != nil {
-			log.Printf("⚠️ OCR failed for page %d: %v", pageNum, err)
-			// Continue with empty text for this page
-			pageText = ""
-		}
-
-		// Clean and process the text
-		cleanText := strings.TrimSpace(pageText)
-		pages = append(pages, PageData{
-			PageNumber: pageNum,
-			Text:       cleanText,
-		})
-
-		if len(cleanText) > 0 {
-			successfulPages++
-			log.Printf("📝 Page %d: extracted %d characters", pageNum, len(cleanText))
-			
-			// Show preview of extracted text
-			preview := cleanText
-			if len(preview) > 100 {
-				preview = preview[:100] + "..."
-			}
-			log.Printf("📖 Page %d preview: %q", pageNum, preview)
-
-			allText.WriteString(cleanText)
-			allText.WriteString("\n\n")
-		} else {
-			log.Printf("⚠️ Page %d: no text extracted", pageNum)
-		}
+	// Step 2: Perform OCR on images in batches of 5
+	log.Printf("🚀 Starting batch OCR processing: %d pages in batches of 5", len(imageFiles))
+	
+	allText, pages, successfulPages, err := processPagesInBatches(ctx, imageFiles)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("batch processing failed: %w", err)
 	}
 
 	finalText := strings.TrimSpace(allText.String())
@@ -201,6 +161,166 @@ func parsePDFWithOCR(ctx context.Context, filePath string) (string, []PageData, 
 	}
 
 	return finalText, pages, metadata, nil
+}
+
+// Process pages in batches of 5 using goroutines for concurrent processing
+func processPagesInBatches(ctx context.Context, imageFiles []string) (*strings.Builder, []PageData, int, error) {
+	const batchSize = 5
+	totalPages := len(imageFiles)
+	
+	var allText strings.Builder
+	var allPages []PageData
+	successfulPages := 0
+	
+	// Process in batches
+	for batchStart := 0; batchStart < totalPages; batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > totalPages {
+			batchEnd = totalPages
+		}
+		
+		batchSize := batchEnd - batchStart
+		log.Printf("🔄 Processing batch %d-%d (%d pages)", batchStart+1, batchEnd, batchSize)
+		
+		// Check for cancellation before each batch
+		select {
+		case <-ctx.Done():
+			return nil, nil, 0, fmt.Errorf("processing cancelled: %w", ctx.Err())
+		default:
+		}
+		
+		// Process this batch concurrently
+		batchText, batchPages, batchSuccessful, err := processBatch(ctx, imageFiles[batchStart:batchEnd], batchStart)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("batch processing failed: %w", err)
+		}
+		
+		// Merge results
+		allText.WriteString(batchText.String())
+		allPages = append(allPages, batchPages...)
+		successfulPages += batchSuccessful
+		
+		log.Printf("✅ Batch %d-%d completed: %d/%d pages successful", batchStart+1, batchEnd, batchSuccessful, batchSize)
+	}
+	
+	return &allText, allPages, successfulPages, nil
+}
+
+// Process a single batch of pages concurrently
+func processBatch(ctx context.Context, imageFiles []string, startIndex int) (*strings.Builder, []PageData, int, error) {
+	batchSize := len(imageFiles)
+	
+	// Create channels for results
+	type pageResult struct {
+		pageNum int
+		text    string
+		success bool
+		err     error
+	}
+	
+	resultChan := make(chan pageResult, batchSize)
+	
+	// Start goroutines for each page in the batch
+	for i, imageFile := range imageFiles {
+		pageNum := startIndex + i + 1
+		
+		go func(imgFile string, pNum int) {
+			// Check for cancellation
+			select {
+			case <-ctx.Done():
+				resultChan <- pageResult{
+					pageNum: pNum,
+					text:    "",
+					success: false,
+					err:     ctx.Err(),
+				}
+				return
+			default:
+			}
+			
+			// Perform OCR
+			pageText, err := performOCR(ctx, imgFile)
+			if err != nil {
+				log.Printf("⚠️ OCR failed for page %d: %v", pNum, err)
+				resultChan <- pageResult{
+					pageNum: pNum,
+					text:    "",
+					success: false,
+					err:     err,
+				}
+				return
+			}
+			
+			// Clean and process the text
+			cleanText := strings.TrimSpace(pageText)
+			success := len(cleanText) > 0
+			
+			if success {
+				log.Printf("📝 Page %d: extracted %d characters", pNum, len(cleanText))
+				
+				// Show preview of extracted text
+				preview := cleanText
+				if len(preview) > 100 {
+					preview = preview[:100] + "..."
+				}
+				log.Printf("📖 Page %d preview: %q", pNum, preview)
+			} else {
+				log.Printf("⚠️ Page %d: no text extracted", pNum)
+			}
+			
+			resultChan <- pageResult{
+				pageNum: pNum,
+				text:    cleanText,
+				success: success,
+				err:     nil,
+			}
+		}(imageFile, pageNum)
+	}
+	
+	// Collect results
+	var allText strings.Builder
+	var pages []PageData
+	successfulPages := 0
+	
+	// Create a map to store results by page number for proper ordering
+	results := make(map[int]pageResult)
+	
+	// Collect all results
+	for i := 0; i < batchSize; i++ {
+		result := <-resultChan
+		results[result.pageNum] = result
+	}
+	
+	// Sort pages by page number and build final results
+	var pageNumbers []int
+	for pageNum := range results {
+		pageNumbers = append(pageNumbers, pageNum)
+	}
+	sort.Ints(pageNumbers)
+	
+	for _, pageNum := range pageNumbers {
+		result := results[pageNum]
+		
+		// Check for errors
+		if result.err != nil {
+			log.Printf("❌ Page %d processing error: %v", pageNum, result.err)
+		}
+		
+		// Add to pages slice
+		pages = append(pages, PageData{
+			PageNumber: pageNum,
+			Text:       result.text,
+		})
+		
+		// Add to combined text if successful
+		if result.success {
+			successfulPages++
+			allText.WriteString(result.text)
+			allText.WriteString("\n\n")
+		}
+	}
+	
+	return &allText, pages, successfulPages, nil
 }
 
 // Validate PDF file

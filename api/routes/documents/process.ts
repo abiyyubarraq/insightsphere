@@ -245,6 +245,7 @@ export async function processDocument(c: Context) {
         fileName: document.file_name,
         fileType: fileExtension || "unknown",
         createdAt: new Date().toISOString(),
+        embeddingModel: embeddingModel,
       },
     }));
 
