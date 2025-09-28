@@ -30,14 +30,21 @@ export const signUpWithEmail = async (
       },
     },
   });
-  if (error || !data.user) throw new Error(error?.message || 'Failed to create account');
+  if (error || !data.user) {
+    throw new Error(error?.message || 'Failed to create account');
+  }
   return data.user;
 };
 
 // Email & Password Sign-In
 export const signInWithEmail = async (email: string, password: string): Promise<User> => {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error || !data.user) throw new Error(error?.message || 'Failed to sign in');
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error || !data.user) {
+    throw new Error(error?.message || 'Failed to sign in');
+  }
   return data.user;
 };
 
@@ -141,6 +148,55 @@ export const getProjectFiles = async (projectId: string, userId: string) => {
     .select('*')
     .eq('project_id', projectId)
     .eq('user_id', userId);
+
   if (error) throw new Error(error.message);
   return data as ProjectFile[];
+};
+
+export const downloadFile = async (storagePath: string): Promise<void> => {
+  try {
+    // Get the file from Supabase storage
+    const { data, error } = await supabase.storage
+      .from('anotherbrainfileplayground')
+      .download(storagePath);
+
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error('File not found');
+
+    // Create a blob URL and trigger download
+    const url = URL.createObjectURL(data);
+    const link = document.createElement('a');
+    link.href = url;
+
+    // Extract filename from storage path
+    const fileName = storagePath.split('/').pop() || 'download';
+    link.download = fileName;
+
+    // Trigger download
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // Clean up the blob URL
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Download failed:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to download file');
+  }
+};
+
+export const getFileUrl = async (storagePath: string): Promise<string> => {
+  try {
+    const { data, error } = await supabase.storage
+      .from('anotherbrainfileplayground')
+      .createSignedUrl(storagePath, 3600); // 1 hour expiry
+
+    if (error) throw new Error(error.message);
+    if (!data?.signedUrl) throw new Error('Failed to generate download URL');
+
+    return data.signedUrl;
+  } catch (error) {
+    console.error('Failed to get file URL:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to generate download URL');
+  }
 };
