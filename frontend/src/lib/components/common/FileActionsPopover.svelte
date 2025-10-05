@@ -8,50 +8,60 @@
     FileText,
     Sparkles,
   } from 'lucide-svelte';
-  import { createEventDispatcher } from 'svelte';
 
-  export let file: {
-    id: string;
-    file_name: string;
-    status: string | null;
-    is_summary_exist: boolean;
-  };
-  export let isDownloading = false;
-  export let isRemoving = false;
-  export let isProcessing = false;
-  export let isGeneratingSummary = false;
-
-  const dispatch = createEventDispatcher<{
-    download: { fileId: string };
-    remove: { fileId: string };
-    process: { fileId: string };
-    retry: { fileId: string };
-    openSummary: { fileId: string };
-    generateSummary: { fileId: string };
+  let {
+    file,
+    isDownloading = false,
+    isRemoving = false,
+    isProcessing = false,
+    isGeneratingSummary = false,
+    ondownload,
+    onremove,
+    onprocess,
+    onretry,
+    onopensummary,
+    ongeneratesummary,
+  } = $props<{
+    file: {
+      id: string;
+      file_name: string;
+      status: string | null;
+      is_summary_exist: boolean;
+    };
+    isDownloading?: boolean;
+    isRemoving?: boolean;
+    isProcessing?: boolean;
+    isGeneratingSummary?: boolean;
+    ondownload?: (event: CustomEvent<{ fileId: string }>) => void;
+    onremove?: (event: CustomEvent<{ fileId: string }>) => void;
+    onprocess?: (event: CustomEvent<{ fileId: string }>) => void;
+    onretry?: (event: CustomEvent<{ fileId: string }>) => void;
+    onopensummary?: (event: CustomEvent<{ fileId: string }>) => void;
+    ongeneratesummary?: (event: CustomEvent<{ fileId: string }>) => void;
   }>();
 
   const handleDownload = () => {
-    dispatch('download', { fileId: file.id });
+    ondownload?.({ detail: { fileId: file.id } } as CustomEvent<{ fileId: string }>);
   };
 
   const handleRemove = () => {
-    dispatch('remove', { fileId: file.id });
+    onremove?.({ detail: { fileId: file.id } } as CustomEvent<{ fileId: string }>);
   };
 
   const handleProcess = () => {
-    dispatch('process', { fileId: file.id });
+    onprocess?.({ detail: { fileId: file.id } } as CustomEvent<{ fileId: string }>);
   };
 
   const handleRetry = () => {
-    dispatch('retry', { fileId: file.id });
+    onretry?.({ detail: { fileId: file.id } } as CustomEvent<{ fileId: string }>);
   };
 
   const handleOpenSummary = () => {
-    dispatch('openSummary', { fileId: file.id });
+    onopensummary?.({ detail: { fileId: file.id } } as CustomEvent<{ fileId: string }>);
   };
 
   const handleGenerateSummary = () => {
-    dispatch('generateSummary', { fileId: file.id });
+    ongeneratesummary?.({ detail: { fileId: file.id } } as CustomEvent<{ fileId: string }>);
   };
 </script>
 
@@ -64,7 +74,7 @@
   <ul class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
     <!-- Download Action -->
     <li>
-      <button class="flex items-center gap-3" on:click={handleDownload} disabled={isDownloading}>
+      <button class="flex items-center gap-3" onclick={handleDownload} disabled={isDownloading}>
         <Download class="w-4 h-4 text-primary" />
         <span class="text-sm">
           {#if isDownloading}
@@ -82,7 +92,7 @@
     <!-- Summary Action -->
     {#if file.is_summary_exist}
       <li>
-        <button class="flex items-center gap-3" on:click={handleOpenSummary}>
+        <button class="flex items-center gap-3" onclick={handleOpenSummary}>
           <FileText class="w-4 h-4 text-info" />
           <span class="text-sm">Open Summary</span>
         </button>
@@ -91,7 +101,7 @@
       <li>
         <button
           class="flex items-center gap-3"
-          on:click={handleGenerateSummary}
+          onclick={handleGenerateSummary}
           disabled={isGeneratingSummary}
         >
           <Sparkles class="w-4 h-4 text-secondary" />
@@ -112,7 +122,7 @@
     <!-- Process/Retry Action -->
     {#if file.status === 'failed'}
       <li>
-        <button class="flex items-center gap-3" on:click={handleRetry} disabled={isProcessing}>
+        <button class="flex items-center gap-3" onclick={handleRetry} disabled={isProcessing}>
           <RotateCcw class="w-4 h-4 text-warning" />
           <span class="text-sm">
             {#if isProcessing}
@@ -128,7 +138,7 @@
       </li>
     {:else if file.status !== 'ready' && file.status !== 'processing'}
       <li>
-        <button class="flex items-center gap-3" on:click={handleProcess} disabled={isProcessing}>
+        <button class="flex items-center gap-3" onclick={handleProcess} disabled={isProcessing}>
           <Play class="w-4 h-4 text-primary" />
           <span class="text-sm">
             {#if isProcessing}
@@ -148,7 +158,7 @@
     <li>
       <button
         class="flex items-center gap-3 text-error"
-        on:click={handleRemove}
+        onclick={handleRemove}
         disabled={isRemoving}
       >
         <Trash2 class="w-4 h-4" />

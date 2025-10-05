@@ -4,7 +4,7 @@
   import { LogOut, Loader2 } from 'lucide-svelte';
   import type { User } from '@supabase/supabase-js';
 
-  let loggingOut = false;
+  let loggingOut = $state(false);
 
   const getAvatar = (u: User | null | undefined): string | null =>
     u?.user_metadata?.avatar_url ?? null;
@@ -47,7 +47,7 @@
         <p class="text-base-content/70 text-xs truncate">{$user?.email}</p>
       </div>
       <button
-        on:click={handleLogout}
+        onclick={handleLogout}
         disabled={loggingOut}
         class="btn btn-ghost btn-sm gap-1"
         title="Sign Out"

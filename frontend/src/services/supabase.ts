@@ -152,7 +152,9 @@ export const getProjectFiles = async (projectId: string, userId: string) => {
     .eq('user_id', userId);
 
   if (error) throw new Error(error.message);
-  return data as ProjectFile[];
+  return data.sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  ) as ProjectFile[];
 };
 
 export const getProjectFileSummary = async (projectId: string, userId: string) => {

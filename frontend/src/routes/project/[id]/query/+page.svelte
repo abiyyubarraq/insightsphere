@@ -3,10 +3,10 @@
 
   const projectId = $page.params.id;
 
-  let query = '';
-  let loading = false;
-  let result: any = null;
-  let error = '';
+  let query = $state('');
+  let loading = $state(false);
+  let result: any = $state(null);
+  let error = $state('');
 
   // Sample queries for quick testing
   const sampleQueries = [
@@ -97,7 +97,7 @@
         <div class="form-control mb-4">
           <textarea
             bind:value={query}
-            on:keydown={handleKeydown}
+            onkeydown={handleKeydown}
             placeholder="Type your question here... (Press Enter to submit, Shift+Enter for new line)"
             class="textarea textarea-bordered textarea-lg h-24 resize-none"
             disabled={loading}
@@ -105,11 +105,7 @@
         </div>
 
         <div class="flex gap-2 flex-wrap mb-4">
-          <button
-            on:click={submitQuery}
-            disabled={loading || !query.trim()}
-            class="btn btn-primary"
-          >
+          <button onclick={submitQuery} disabled={loading || !query.trim()} class="btn btn-primary">
             {#if loading}
               <span class="loading loading-spinner loading-sm"></span>
               Processing...
@@ -119,7 +115,7 @@
           </button>
 
           <button
-            on:click={() => {
+            onclick={() => {
               query = '';
               result = null;
               error = '';
@@ -136,7 +132,7 @@
         <div class="flex flex-wrap gap-2">
           {#each sampleQueries as sampleQuery}
             <button
-              on:click={() => useSampleQuery(sampleQuery)}
+              onclick={() => useSampleQuery(sampleQuery)}
               class="btn btn-sm btn-ghost"
               disabled={loading}
             >

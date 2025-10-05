@@ -1,26 +1,34 @@
 <script lang="ts">
-  export let isOpen = false;
-  export let title = 'Confirm Action';
-  export let message = 'Are you sure you want to proceed?';
-  export let confirmText = 'Confirm';
-  export let cancelText = 'Cancel';
-  export let confirmClass = 'btn-error';
-  export let icon: 'warning' | 'danger' | 'info' = 'warning';
-  export let loading = false;
-
-  // Event dispatchers
-  import { createEventDispatcher } from 'svelte';
-  const dispatch = createEventDispatcher<{
-    confirm: void;
-    cancel: void;
+  let {
+    isOpen = $bindable(),
+    title = 'Confirm Action',
+    message = 'Are you sure you want to proceed?',
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    confirmClass = 'btn-error',
+    icon = 'warning' as 'warning' | 'danger' | 'info',
+    loading = false,
+    onconfirm,
+    oncancel,
+  } = $props<{
+    isOpen?: boolean;
+    title?: string;
+    message?: string;
+    confirmText?: string;
+    cancelText?: string;
+    confirmClass?: string;
+    icon?: 'warning' | 'danger' | 'info';
+    loading?: boolean;
+    onconfirm?: () => void;
+    oncancel?: () => void;
   }>();
 
   const handleConfirm = () => {
-    dispatch('confirm');
+    onconfirm?.();
   };
 
   const handleCancel = () => {
-    dispatch('cancel');
+    oncancel?.();
   };
 
   const handleKeydown = (event: KeyboardEvent) => {
@@ -55,8 +63,8 @@
 {#if isOpen}
   <div
     class="modal modal-open"
-    on:click={handleBackdropClick}
-    on:keydown={handleKeydown}
+    onclick={handleBackdropClick}
+    onkeydown={handleKeydown}
     role="dialog"
     aria-modal="true"
     aria-labelledby="dialog-title"
@@ -74,10 +82,10 @@
       </p>
 
       <div class="modal-action">
-        <button class="btn btn-ghost" on:click={handleCancel} disabled={loading}>
+        <button class="btn btn-ghost" onclick={handleCancel} disabled={loading}>
           {cancelText}
         </button>
-        <button class="btn {confirmClass} gap-2" on:click={handleConfirm} disabled={loading}>
+        <button class="btn {confirmClass} gap-2" onclick={handleConfirm} disabled={loading}>
           {#if loading}
             <span class="loading loading-spinner loading-xs"></span>
           {/if}

@@ -5,16 +5,18 @@
   import { Eye, EyeOff, Mail, Lock, Loader2, AlertCircle, X } from 'lucide-svelte';
 
   // Redirect if already authenticated
-  $: if ($isAuthenticated) {
-    goto('/');
-  }
+  $effect(() => {
+    if ($isAuthenticated) {
+      goto('/');
+    }
+  });
 
-  let showPassword = false;
-  let email = '';
-  let password = '';
-  let loadingLoginWithGoogle = false;
-  let loadingLoginWithEmail = false;
-  let error = '';
+  let showPassword = $state(false);
+  let email = $state('');
+  let password = $state('');
+  let loadingLoginWithGoogle = $state(false);
+  let loadingLoginWithEmail = $state(false);
+  let error = $state('');
 
   function togglePasswordVisibility() {
     showPassword = !showPassword;
@@ -35,12 +37,12 @@
     }
 
     try {
-      const user = await signInWithEmail(email, password);
+      await signInWithEmail(email, password);
 
       // Redirect to dashboard or home page
       goto('/');
-    } catch (err: any) {
-      error = err.message;
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'An unknown error occurred';
     } finally {
       if (loginType === 'google') {
         loadingLoginWithGoogle = false;
@@ -100,7 +102,7 @@
       <div role="alert" class="alert alert-error flex items-start">
         <AlertCircle class="w-5 h-5" />
         <span class="flex-1">{error}</span>
-        <button class="btn btn-ghost btn-xs" on:click={() => (error = '')}>
+        <button class="btn btn-ghost btn-xs" onclick={() => (error = '')}>
           <X class="w-4 h-4" />
         </button>
       </div>
@@ -108,7 +110,7 @@
 
     <!-- Google Login Button -->
     <button
-      on:click={handleGoogleLogin}
+      onclick={handleGoogleLogin}
       disabled={loadingLoginWithGoogle}
       class="btn btn-primary w-full gap-3"
     >
@@ -137,7 +139,13 @@
     <div class="divider text-white">Or, sign in with your email</div>
 
     <!-- Login Form -->
-    <form on:submit|preventDefault={() => handleSubmit('email')} class="space-y-4">
+    <form
+      onsubmit={(e) => {
+        e.preventDefault();
+        handleSubmit('email');
+      }}
+      class="space-y-4"
+    >
       <!-- Email Field -->
       <div class="form-control">
         <div class="relative">
@@ -169,7 +177,7 @@
           />
           <button
             type="button"
-            on:click={togglePasswordVisibility}
+            onclick={togglePasswordVisibility}
             class="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2 z-10"
             tabindex="-1"
           >

@@ -15,20 +15,22 @@
   } from 'lucide-svelte';
 
   // Redirect if already authenticated
-  $: if ($isAuthenticated) {
-    goto('/');
-  }
+  $effect(() => {
+    if ($isAuthenticated) {
+      goto('/');
+    }
+  });
 
-  let showPassword = false;
-  let showConfirmPassword = false;
-  let name = '';
-  let email = '';
-  let password = '';
-  let confirmPassword = '';
-  let loadingSignupWithEmail = false;
-  let loadingSignupWithGoogle = false;
-  let error = '';
-  let info = '';
+  let showPassword = $state(false);
+  let showConfirmPassword = $state(false);
+  let name = $state('');
+  let email = $state('');
+  let password = $state('');
+  let confirmPassword = $state('');
+  let loadingSignupWithEmail = $state(false);
+  let loadingSignupWithGoogle = $state(false);
+  let error = $state('');
+  let info = $state('');
 
   function togglePasswordVisibility() {
     showPassword = !showPassword;
@@ -68,8 +70,8 @@
       // Clear form fields
       password = '';
       confirmPassword = '';
-    } catch (err: any) {
-      error = err.message;
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'An unknown error occurred';
     } finally {
       loadingSignupWithEmail = false;
     }
@@ -80,12 +82,12 @@
     loadingSignupWithGoogle = true;
 
     try {
-      const user = await signInWithGoogle();
+      await signInWithGoogle();
 
       // Redirect to dashboard or home page
       goto('/');
-    } catch (err: any) {
-      error = err.message;
+    } catch (err: unknown) {
+      error = err instanceof Error ? err.message : 'An unknown error occurred';
     } finally {
       loadingSignupWithGoogle = false;
     }
@@ -125,7 +127,7 @@
       <div role="alert" class="alert alert-error flex items-start">
         <AlertCircle class="w-5 h-5" />
         <span class="flex-1">{error}</span>
-        <button class="btn btn-ghost btn-xs" on:click={() => (error = '')}>
+        <button class="btn btn-ghost btn-xs" onclick={() => (error = '')}>
           <X class="w-4 h-4" />
         </button>
       </div>
@@ -140,7 +142,7 @@
 
     <!-- Google Signup Button -->
     <button
-      on:click={handleGoogleSignup}
+      onclick={handleGoogleSignup}
       disabled={loadingSignupWithGoogle}
       class="btn btn-primary w-full gap-3"
     >
@@ -169,7 +171,13 @@
     <div class="divider text-white">Or, sign up with your email</div>
 
     <!-- Signup Form -->
-    <form on:submit|preventDefault={handleSubmit} class="space-y-4">
+    <form
+      onsubmit={(e) => {
+        e.preventDefault();
+        handleSubmit();
+      }}
+      class="space-y-4"
+    >
       <!-- Name Field -->
       <div class="form-control">
         <div class="relative">
@@ -217,7 +225,7 @@
           />
           <button
             type="button"
-            on:click={togglePasswordVisibility}
+            onclick={togglePasswordVisibility}
             class="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2 z-10"
             tabindex="-1"
           >
@@ -245,7 +253,7 @@
           />
           <button
             type="button"
-            on:click={toggleConfirmPasswordVisibility}
+            onclick={toggleConfirmPasswordVisibility}
             class="btn btn-ghost btn-sm absolute right-1 top-1/2 -translate-y-1/2 z-10"
             tabindex="-1"
           >

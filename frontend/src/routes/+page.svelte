@@ -1,8 +1,8 @@
 <script lang="ts">
   import { UserDashboard, LoadingState, AuthButtons } from '../lib/components/home';
   import { isAuthenticated, loading, user } from '../stores/auth';
-  import { projects as projectsStore, type Project } from '../stores/project';
-  export let data: { projects: Project[] };
+  import { projects as projectsStore } from '../stores/project';
+  const { data } = $props();
   projectsStore.set(data.projects);
 </script>
 

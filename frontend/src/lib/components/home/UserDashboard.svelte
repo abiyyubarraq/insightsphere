@@ -38,44 +38,52 @@
   import moment from 'moment';
   import LoadingState from './LoadingState.svelte';
 
-  let newProjectName = '';
-  let loading = false;
-  let error = '';
-  let uploadLoading = false;
-  let uploadError = '';
-  let fileInput: HTMLInputElement | undefined;
-  let uploadedFiles: ProjectFile[] = [];
-  let removingFileLoading: Record<string, boolean> = {};
-  let downloadingFileLoading: Record<string, boolean> = {};
-  let showCreateModal = false;
-  let loadingFiles = false;
+  let newProjectName = $state('');
+  let loading = $state(false);
+  let error = $state('');
+  let uploadLoading = $state(false);
+  let uploadError = $state('');
+  let fileInput: HTMLInputElement | undefined = $state();
+  let uploadedFiles: ProjectFile[] = $state([]);
+  let removingFileLoading: Record<string, boolean> = $state({});
+  let downloadingFileLoading: Record<string, boolean> = $state({});
+  let showCreateModal = $state(false);
+  let loadingFiles = $state(false);
 
   // Confirmation dialog state
-  let showConfirmDialog = false;
-  let fileToRemove: { index: number; name: string } | null = null;
+  let showConfirmDialog = $state(false);
+  let fileToRemove: { index: number; name: string } | null = $state(null);
 
   // File processing state
-  let processingFileLoading: Record<string, boolean> = {};
-  let generatingSummaryLoading: Record<string, boolean> = {};
+  let processingFileLoading: Record<string, boolean> = $state({});
+  let generatingSummaryLoading: Record<string, boolean> = $state({});
 
   // Summary modal state
-  let showSummaryModal = false;
-  let currentSummary = '';
-  let currentSummaryFileName = '';
+  let showSummaryModal = $state(false);
+  let currentSummary = $state('');
+  let currentSummaryFileName = $state('');
 
   // Sidebar state
-  let leftSidebarOpen = true;
-  let rightSidebarOpen = false;
+  let leftSidebarOpen = $state(true);
+  let rightSidebarOpen = $state(false);
 
   // Projects list state
-  let showProjectsList = false;
+  let showProjectsList = $state(false);
 
   // Navigation state
-  let activeNavItem = '';
+  let activeNavItem = $state('');
 
-  // Reactive store values
-  $: currentSelectedProject = $selectedProject;
-  $: currentUser = $user;
+  // File filtering state
+  let fileFilter = $state('');
+
+  // Derived filtered files
+  let filteredFiles = $derived(
+    fileFilter.trim() === ''
+      ? uploadedFiles
+      : uploadedFiles.filter((file) =>
+          file.file_name.toLowerCase().includes(fileFilter.toLowerCase())
+        )
+  );
 
   // Helper function to clear errors
   const clearErrors = () => {
@@ -89,7 +97,7 @@
 
     await withLoading(
       async () => {
-        const p = await createProject(currentUser?.id as string, newProjectName.trim());
+        const p = await createProject($user?.id as string, newProjectName.trim());
         projects.update((arr) => [...arr, p]);
         selectedProject.set(p);
         newProjectName = '';
@@ -115,7 +123,7 @@
     }
   };
 
-  const handleFileUpload = async (_event: Event) => {
+  const handleFileUpload = async () => {
     // TODO: Implement file upload functionality
     // const target = event.target as HTMLInputElement;
     // const file = target.files?.[0];
@@ -137,7 +145,7 @@
 
   const removeFile = async (index: number) => {
     const file = uploadedFiles[index];
-    if (!file || !currentSelectedProject || !currentUser) return;
+    if (!file || !$selectedProject || !$user) return;
 
     // Show confirmation dialog
     fileToRemove = { index, name: file.file_name };
@@ -145,7 +153,7 @@
   };
 
   const confirmRemoveFile = async () => {
-    if (!fileToRemove || !currentSelectedProject || !currentUser) return;
+    if (!fileToRemove || !$selectedProject || !$user) return;
 
     const file = uploadedFiles[fileToRemove.index];
     if (!file) return;
@@ -154,7 +162,7 @@
 
     await withLoading(
       async () => {
-        await deleteDocument(file.id, currentSelectedProject.id, currentUser.id);
+        await deleteDocument(file.id, $selectedProject.id, $user.id);
         uploadedFiles = uploadedFiles.filter((_, i) => i !== fileIndex);
       },
       (loadingState) => {
@@ -231,10 +239,10 @@
   const handleFileOpenSummary = async (event: CustomEvent<{ fileId: string }>) => {
     const fileId = event.detail.fileId;
     const file = uploadedFiles.find((f) => f.id === fileId);
-    if (!file || !currentSelectedProject || !currentUser) return;
+    if (!file || !$selectedProject || !$user) return;
 
     try {
-      const summaries = await getProjectFileSummary(currentSelectedProject.id, currentUser.id);
+      const summaries = await getProjectFileSummary($selectedProject.id, $user.id);
       const fileSummary = summaries.find((s) => s.id === fileId);
 
       if (fileSummary?.summary) {
@@ -272,10 +280,10 @@
   const refreshProjectFiles = async (project: Project) => {
     try {
       loadingFiles = true;
-      const files = await getProjectFiles(project.id, currentUser?.id || '');
-
-      uploadedFiles = files;
       selectedProject.set(project);
+
+      const files = await getProjectFiles(project.id, $user?.id || '');
+      uploadedFiles = files;
     } catch (e) {
       error = e instanceof Error ? e.message : 'An unknown error occurred';
     } finally {
@@ -309,7 +317,7 @@
 <input
   type="file"
   bind:this={fileInput}
-  on:change={handleFileUpload}
+  onchange={handleFileUpload}
   accept=".pdf,.doc,.docx,.txt"
   class="hidden"
 />
@@ -330,7 +338,11 @@
       <div class="flex-1 p-4">
         <div class="space-y-2">
           <div class="flex justify-end">
-            <button class="btn btn-ghost btn-sm" on:click={toggleLeftSidebar}>
+            <button
+              class="btn btn-ghost btn-sm"
+              title="Close Left Sidebar"
+              onclick={toggleLeftSidebar}
+            >
               <PanelRightOpen class="w-4 h-4 text-base-content/70" />
             </button>
           </div>
@@ -338,7 +350,7 @@
             class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'new-project'
               ? 'btn-active'
               : ''}"
-            on:click={() => handleNavClick('new-project')}
+            onclick={() => handleNavClick('new-project')}
           >
             <Plus class="w-4 h-4" />
             New Project
@@ -348,7 +360,7 @@
             class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'search-project'
               ? 'btn-active'
               : ''}"
-            on:click={() => handleNavClick('search-project')}
+            onclick={() => handleNavClick('search-project')}
           >
             <Search class="w-4 h-4" />
             Search Project
@@ -358,7 +370,7 @@
             class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'file-library'
               ? 'btn-active'
               : ''}"
-            on:click={() => handleNavClick('file-library')}
+            onclick={() => handleNavClick('file-library')}
           >
             <Library class="w-4 h-4" />
             File Library
@@ -370,7 +382,7 @@
           <div class="mt-6">
             <button
               class="btn btn-ghost w-full justify-start gap-3"
-              on:click={toggleShowProjectsList}
+              onclick={toggleShowProjectsList}
             >
               <h3 class="text-sm font-semibold text-base-content/70">Projects</h3>
               {#if showProjectsList}
@@ -382,20 +394,25 @@
             <div class="space-y-1 {showProjectsList ? 'block' : 'hidden'}">
               {#each $projects as project}
                 <button
-                  class="hover:cursor-pointer text-left truncate w-full px-3 py-2 rounded-md text-sm hover:bg-base-300 transition-colors {currentSelectedProject?.id ===
+                  class="hover:cursor-pointer text-left truncate w-full px-3 py-2 rounded-md text-sm hover:bg-primary/20 transition-colors {$selectedProject?.id ===
                   project.id
                     ? 'bg-primary/20 text-primary'
                     : 'text-base-content/80'}"
-                  on:click={async () => {
-                    if (currentSelectedProject?.id !== project.id)
+                  onclick={async () => {
+                    if ($selectedProject?.id !== project.id) {
+                      rightSidebarOpen = true;
                       await refreshProjectFiles(project);
-                    rightSidebarOpen = true;
+                    }
                   }}
                 >
                   {project.name}
                 </button>
               {/each}
             </div>
+          </div>
+        {:else}
+          <div class="py-8">
+            <p class="text-sm font-semibold text-base-content/70">No projects found</p>
           </div>
         {/if}
       </div>
@@ -408,89 +425,116 @@
   </div>
 
   <!-- Right Sidebar - Absolute positioned -->
-  {#if currentSelectedProject}
+  {#if $selectedProject}
     <div
       class="bg-base-100/50 absolute right-0 top-0 bottom-0 w-60 border-l border-base-300 border-l-white transition-all duration-300 {rightSidebarOpen
         ? 'translate-x-0 opacity-100'
         : 'translate-x-full opacity-0 pointer-events-none'} z-10"
     >
       <div class="flex flex-col h-full">
-        <div class="flex justify-start">
-          <button class="btn btn-ghost btn-sm" on:click={toggleRightSidebar}>
-            <PanelLeftOpen class="w-4 h-4 text-base-content/70" />
-          </button>
-        </div>
         <div class="p-4 border-b border-base-300">
-          <h3 class="text-lg font-semibold flex items-center gap-2">
-            <Folder class="w-5 h-5" />
-            Documents
-          </h3>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-lg font-semibold flex items-center gap-2">
+              <Folder class="w-5 h-5" />
+              Documents
+            </h3>
+            <button
+              class="btn btn-ghost btn-sm"
+              title="Close Right Sidebar"
+              onclick={toggleRightSidebar}
+            >
+              <PanelLeftOpen class="w-4 h-4 text-base-content/70" />
+            </button>
+          </div>
+
+          <!-- File Filter Input -->
+          <div class="form-control">
+            <input
+              type="text"
+              placeholder="Filter files by name..."
+              bind:value={fileFilter}
+              disabled={uploadedFiles.length === 0 || loadingFiles}
+              class="input input-bordered input-sm w-full"
+            />
+          </div>
         </div>
         {#if loadingFiles}
           <LoadingState />
         {:else}
           <div class="flex-1 overflow-y-auto p-4">
             {#if uploadedFiles.length > 0}
-              <div class="space-y-2">
-                {#each uploadedFiles.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) as file}
-                  <div class="card bg-base-100 shadow-sm">
-                    <div class="card-body p-3">
-                      <div class="flex items-start gap-3">
-                        <!-- File Status Icon -->
-                        {#if file.status === 'ready'}
-                          <div class="tooltip tooltip-right" data-tip="File processed">
-                            <Check class="w-4 h-4 text-success flex-shrink-0 mt-1" />
-                          </div>
-                        {:else if file.status === 'processing'}
-                          <div class="tooltip tooltip-right" data-tip="File still processing">
-                            <Loader class="w-4 h-4 text-warning animate-spin flex-shrink-0 mt-1" />
-                          </div>
-                        {:else if file.status === 'failed'}
-                          <div class="tooltip tooltip-right" data-tip="File processing failed">
-                            <CircleOff class="w-4 h-4 text-error flex-shrink-0 mt-1" />
-                          </div>
-                        {:else}
-                          <div class="tooltip tooltip-right" data-tip="File not processed">
-                            <PackageSearch
-                              class="w-4 h-4 text-base-content/50 flex-shrink-0 mt-1"
-                            />
-                          </div>
-                        {/if}
+              {#if filteredFiles.length > 0}
+                <div class="space-y-2">
+                  {#each filteredFiles as file}
+                    <div class="card bg-base-100 shadow-sm">
+                      <div class="card-body p-3">
+                        <div class="flex items-start gap-3">
+                          <!-- File Status Icon -->
+                          {#if file.status === 'ready'}
+                            <div title="File processed">
+                              <Check class="w-4 h-4 text-success flex-shrink-0 mt-1" />
+                            </div>
+                          {:else if file.status === 'processing'}
+                            <div title="File still processing">
+                              <Loader
+                                class="w-4 h-4 text-warning animate-spin flex-shrink-0 mt-1"
+                              />
+                            </div>
+                          {:else if file.status === 'failed'}
+                            <div title="File processing failed">
+                              <CircleOff class="w-4 h-4 text-error flex-shrink-0 mt-1" />
+                            </div>
+                          {:else}
+                            <div title="File not processed">
+                              <PackageSearch
+                                class="w-4 h-4 text-base-content/50 flex-shrink-0 mt-1"
+                              />
+                            </div>
+                          {/if}
 
-                        <!-- File Info -->
-                        <div class="flex-1 min-w-0">
-                          <p class="font-medium text-sm truncate">{file.file_name}</p>
-                          <p class="text-xs text-base-content/70">
-                            {moment(file.created_at).format('DD/MM/YYYY HH:mm')}
-                          </p>
+                          <!-- File Info -->
+                          <div class="flex-1 min-w-0 z-11" title={file.file_name}>
+                            <p class="font-medium text-sm truncate">
+                              {file.file_name}
+                            </p>
+                            <p class="text-xs text-base-content/70">
+                              {moment(file.created_at).format('DD/MM/YYYY HH:mm')}
+                            </p>
+                          </div>
+
+                          <!-- Actions Menu -->
+                          <FileActionsPopover
+                            {file}
+                            isDownloading={downloadingFileLoading[file.id]}
+                            isRemoving={removingFileLoading[file.id]}
+                            isProcessing={processingFileLoading[file.id]}
+                            isGeneratingSummary={generatingSummaryLoading[file.id]}
+                            ondownload={handleFileDownload}
+                            onremove={handleFileRemove}
+                            onprocess={handleFileProcess}
+                            onretry={handleFileRetry}
+                            onopensummary={handleFileOpenSummary}
+                            ongeneratesummary={handleFileGenerateSummary}
+                          />
                         </div>
-
-                        <!-- Actions Menu -->
-                        <FileActionsPopover
-                          {file}
-                          isDownloading={downloadingFileLoading[file.id]}
-                          isRemoving={removingFileLoading[file.id]}
-                          isProcessing={processingFileLoading[file.id]}
-                          isGeneratingSummary={generatingSummaryLoading[file.id]}
-                          on:download={handleFileDownload}
-                          on:remove={handleFileRemove}
-                          on:process={handleFileProcess}
-                          on:retry={handleFileRetry}
-                          on:openSummary={handleFileOpenSummary}
-                          on:generateSummary={handleFileGenerateSummary}
-                        />
                       </div>
                     </div>
-                  </div>
-                {/each}
-              </div>
+                  {/each}
+                </div>
+              {:else}
+                <div class="text-center py-8">
+                  <div class="text-4xl mb-4">🔍</div>
+                  <p class="text-base-content/70">No files match your filter</p>
+                  <p class="text-sm text-base-content/50 mt-1">Try a different search term</p>
+                </div>
+              {/if}
             {:else}
               <div class="text-center py-8">
                 <div class="text-4xl mb-4">📄</div>
                 <p class="text-base-content/70">No documents uploaded yet</p>
                 <button
                   class="btn btn-primary btn-sm mt-4 gap-2"
-                  on:click={handleUploadClick}
+                  onclick={handleUploadClick}
                   disabled={uploadLoading}
                 >
                   {#if uploadLoading}
@@ -517,11 +561,7 @@
     <!-- Top Bar with Toggle Buttons -->
     <div class="flex items-center justify-between p-4 border-b border-base-300">
       <div class="flex justify-start">
-        <button
-          class="btn btn-ghost btn-sm"
-          on:click={toggleLeftSidebar}
-          title="Toggle Left Sidebar"
-        >
+        <button class="btn btn-ghost btn-sm" onclick={toggleLeftSidebar} title="Open Left Sidebar">
           {#if !leftSidebarOpen}
             <ChevronRight class="w-4 h-4 text-base-content/70" />
           {/if}
@@ -529,16 +569,16 @@
       </div>
 
       <h1 class="text-xl font-semibold">
-        {#if currentSelectedProject}
-          {currentSelectedProject.name}
+        {#if $selectedProject}
+          {$selectedProject.name}
         {/if}
       </h1>
 
-      {#if currentSelectedProject}
+      {#if $selectedProject}
         <button
           class="btn btn-ghost btn-sm"
-          on:click={toggleRightSidebar}
-          title="Toggle Right Sidebar"
+          onclick={toggleRightSidebar}
+          title="Open Right Sidebar"
         >
           {#if !rightSidebarOpen}
             <ChevronLeft class="w-4 h-4 text-base-content/70" />
@@ -552,7 +592,7 @@
       <div class="alert alert-error mx-4 mt-4">
         <X class="w-4 h-4" />
         {uploadError}
-        <button class="btn btn-sm btn-ghost" on:click={() => (uploadError = '')}>
+        <button class="btn btn-sm btn-ghost" onclick={() => (uploadError = '')}>
           <X class="w-4 h-4" />
         </button>
       </div>
@@ -560,7 +600,7 @@
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col w-full">
-      {#if !currentSelectedProject}
+      {#if !$selectedProject}
         <!-- Empty State - No Project Selected -->
         <div class="flex-1 flex items-center justify-center">
           <div class="text-center space-y-6 max-w-md w-full">
@@ -571,7 +611,7 @@
               started.
             </p>
             {#if $projects.length === 0}
-              <button class="btn btn-primary btn-lg gap-2" on:click={handleCreateNewProject}>
+              <button class="btn btn-primary btn-lg gap-2" onclick={handleCreateNewProject}>
                 <Plus class="w-5 h-5" />
                 Create Your First Project
               </button>
@@ -588,7 +628,7 @@
                 <div class="text-4xl">💬</div>
                 <h3 class="text-2xl font-semibold">Start a conversation</h3>
                 <p class="text-base-content/70">
-                  Ask questions about your documents in {currentSelectedProject.name}
+                  Ask questions about your documents in {$selectedProject.name}
                 </p>
               </div>
             </div>
@@ -612,7 +652,7 @@
                 </div>
                 <button
                   class="btn btn-primary gap-2"
-                  on:click={handleUploadClick}
+                  onclick={handleUploadClick}
                   disabled={uploadLoading}
                 >
                   {#if uploadLoading}
@@ -651,14 +691,14 @@
           bind:value={newProjectName}
           placeholder="Enter project name"
           class="input input-bordered w-full"
-          on:keydown={(e) => e.key === 'Enter' && createNewProject(true)}
+          onkeydown={(e) => e.key === 'Enter' && createNewProject(true)}
         />
       </div>
 
       <div class="modal-action">
         <button
           class="btn btn-ghost"
-          on:click={() => {
+          onclick={() => {
             showCreateModal = false;
             newProjectName = '';
             clearErrors();
@@ -668,7 +708,7 @@
         </button>
         <button
           class="btn btn-primary gap-2"
-          on:click={() => createNewProject(true)}
+          onclick={() => createNewProject(true)}
           disabled={loading || !newProjectName.trim()}
         >
           {#if loading}
@@ -693,8 +733,8 @@
   confirmClass="btn-error"
   icon="danger"
   loading={fileToRemove ? removingFileLoading[uploadedFiles[fileToRemove.index]?.id] : false}
-  on:confirm={confirmRemoveFile}
-  on:cancel={cancelRemoveFile}
+  onconfirm={confirmRemoveFile}
+  oncancel={cancelRemoveFile}
 />
 
 <!-- Summary Modal -->
@@ -703,7 +743,7 @@
     <div class="modal-box max-w-4xl">
       <div class="flex justify-between items-center mb-4">
         <h3 class="font-bold text-lg">Document Summary</h3>
-        <button class="btn btn-sm btn-circle btn-ghost" on:click={closeSummaryModal}>
+        <button class="btn btn-sm btn-circle btn-ghost" onclick={closeSummaryModal}>
           <X class="w-4 h-4" />
         </button>
       </div>
@@ -719,7 +759,7 @@
       </div>
 
       <div class="modal-action">
-        <button class="btn btn-primary" on:click={closeSummaryModal}> Close </button>
+        <button class="btn btn-primary" onclick={closeSummaryModal}> Close </button>
       </div>
     </div>
   </div>
