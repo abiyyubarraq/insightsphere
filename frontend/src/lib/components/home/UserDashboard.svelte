@@ -1,23 +1,5 @@
 <script lang="ts">
-  import {
-    Upload,
-    Search,
-    Plus,
-    X,
-    Check,
-    PackageSearch,
-    Loader,
-    CircleOff,
-    ChevronLeft,
-    ChevronRight,
-    Folder,
-    Library,
-    MessageSquare,
-    ChevronDown,
-    ChevronUp,
-    PanelRightOpen,
-    PanelLeftOpen,
-  } from 'lucide-svelte';
+  import { Plus, X } from 'lucide-svelte';
   import {
     projects,
     selectedProject,
@@ -33,11 +15,12 @@
     downloadFile,
   } from '../../../services/supabase';
   import { withLoading } from '../../../commons/helpers';
-  import { ConfirmationDialog, FileActionsPopover } from '../common';
-  import UserHeader from './UserHeader.svelte';
-  import moment from 'moment';
-  import LoadingState from './LoadingState.svelte';
+  import { ConfirmationDialog } from '../common';
+  import LeftSidebar from './LeftSidebar.svelte';
+  import RightSidebar from './RightSidebar.svelte';
+  import MainContent from './MainContent.svelte';
 
+  // State management
   let newProjectName = $state('');
   let loading = $state(false);
   let error = $state('');
@@ -125,22 +108,6 @@
 
   const handleFileUpload = async () => {
     // TODO: Implement file upload functionality
-    // const target = event.target as HTMLInputElement;
-    // const file = target.files?.[0];
-    // if (!file || !currentSelectedProject || !currentUser) return;
-    // await withLoading(
-    //   async () => {
-    //     await uploadDocument(file, currentSelectedProject.id, currentUser.id);
-    //     await refreshProjectFiles();
-    //     target.value = '';
-    //   },
-    //   (loadingState) => {
-    //     uploadLoading = loadingState;
-    //   },
-    //   (errorMsg) => {
-    //     uploadError = errorMsg;
-    //   }
-    // );
   };
 
   const removeFile = async (index: number) => {
@@ -195,7 +162,6 @@
   };
 
   // File action handlers
-
   const handleFileDownload = (event: CustomEvent<{ fileId: string }>) => {
     const file = uploadedFiles.find((f) => f.id === event.detail.fileId);
     if (file) {
@@ -215,7 +181,6 @@
     processingFileLoading[fileId] = true;
     try {
       // TODO: Implement file processing API call
-      // await processFile(fileId);
     } catch (error) {
       uploadError = error instanceof Error ? error.message : 'Failed to process file';
     } finally {
@@ -228,7 +193,6 @@
     processingFileLoading[fileId] = true;
     try {
       // TODO: Implement file retry processing API call
-      // await retryFileProcessing(fileId);
     } catch (error) {
       uploadError = error instanceof Error ? error.message : 'Failed to retry file processing';
     } finally {
@@ -262,7 +226,6 @@
     generatingSummaryLoading[fileId] = true;
     try {
       // TODO: Implement summary generation API call
-      // await generateFileSummary(fileId);
     } catch (error) {
       uploadError = error instanceof Error ? error.message : 'Failed to generate summary';
     } finally {
@@ -327,348 +290,51 @@
   class="relative h-screen bg-cover bg-center bg-no-repeat"
   style="background-image: url('/dashboard.png'); overflow: hidden;"
 >
-  <!-- Left Sidebar - Absolute positioned -->
-  <div
-    class="bg-base-100/50 absolute left-0 top-0 bottom-0 w-50 border-r border-base-300 border-r-white transition-transform duration-300 {leftSidebarOpen
-      ? 'translate-x-0'
-      : '-translate-x-full'} z-10"
-  >
-    <div class="flex flex-col h-full">
-      <!-- Navigation Menu -->
-      <div class="flex-1 p-4">
-        <div class="space-y-2">
-          <div class="flex justify-end">
-            <button
-              class="btn btn-ghost btn-sm"
-              title="Close Left Sidebar"
-              onclick={toggleLeftSidebar}
-            >
-              <PanelRightOpen class="w-4 h-4 text-base-content/70" />
-            </button>
-          </div>
-          <button
-            class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'new-project'
-              ? 'btn-active'
-              : ''}"
-            onclick={() => handleNavClick('new-project')}
-          >
-            <Plus class="w-4 h-4" />
-            New Project
-          </button>
+  <!-- Left Sidebar -->
+  <LeftSidebar
+    bind:leftSidebarOpen
+    bind:showProjectsList
+    bind:activeNavItem
+    onToggleLeftSidebar={toggleLeftSidebar}
+    onNavClick={handleNavClick}
+    onToggleProjectsList={toggleShowProjectsList}
+    onRefreshProjectFiles={refreshProjectFiles}
+  />
 
-          <button
-            class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'search-project'
-              ? 'btn-active'
-              : ''}"
-            onclick={() => handleNavClick('search-project')}
-          >
-            <Search class="w-4 h-4" />
-            Search Project
-          </button>
+  <!-- Right Sidebar -->
+  <RightSidebar
+    bind:rightSidebarOpen
+    bind:uploadedFiles
+    bind:loadingFiles
+    bind:fileFilter
+    bind:filteredFiles
+    bind:downloadingFileLoading
+    bind:removingFileLoading
+    bind:processingFileLoading
+    bind:generatingSummaryLoading
+    bind:uploadLoading
+    onToggleRightSidebar={toggleRightSidebar}
+    onFileDownload={handleFileDownload}
+    onFileRemove={handleFileRemove}
+    onFileProcess={handleFileProcess}
+    onFileRetry={handleFileRetry}
+    onFileOpenSummary={handleFileOpenSummary}
+    onFileGenerateSummary={handleFileGenerateSummary}
+    onUploadClick={handleUploadClick}
+  />
 
-          <button
-            class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'file-library'
-              ? 'btn-active'
-              : ''}"
-            onclick={() => handleNavClick('file-library')}
-          >
-            <Library class="w-4 h-4" />
-            File Library
-          </button>
-        </div>
-
-        <!-- Projects List - Chat History Style -->
-        {#if $projects.length > 0}
-          <div class="mt-6">
-            <button
-              class="btn btn-ghost w-full justify-start gap-3"
-              onclick={toggleShowProjectsList}
-            >
-              <h3 class="text-sm font-semibold text-base-content/70">Projects</h3>
-              {#if showProjectsList}
-                <ChevronUp class="w-3 h-3 text-base-content/70" />
-              {:else}
-                <ChevronDown class="w-3 h-3 text-base-content/70" />
-              {/if}
-            </button>
-            <div class="space-y-1 {showProjectsList ? 'block' : 'hidden'}">
-              {#each $projects as project}
-                <button
-                  class="hover:cursor-pointer text-left truncate w-full px-3 py-2 rounded-md text-sm hover:bg-primary/20 transition-colors {$selectedProject?.id ===
-                  project.id
-                    ? 'bg-primary/20 text-primary'
-                    : 'text-base-content/80'}"
-                  onclick={async () => {
-                    if ($selectedProject?.id !== project.id) {
-                      rightSidebarOpen = true;
-                      await refreshProjectFiles(project);
-                    }
-                  }}
-                >
-                  {project.name}
-                </button>
-              {/each}
-            </div>
-          </div>
-        {:else}
-          <div class="py-8">
-            <p class="text-sm font-semibold text-base-content/70">No projects found</p>
-          </div>
-        {/if}
-      </div>
-
-      <!-- User Header at Bottom -->
-      <div class="p-4 border-t border-base-300">
-        <UserHeader />
-      </div>
-    </div>
-  </div>
-
-  <!-- Right Sidebar - Absolute positioned -->
-  {#if $selectedProject}
-    <div
-      class="bg-base-100/50 absolute right-0 top-0 bottom-0 w-60 border-l border-base-300 border-l-white transition-all duration-300 {rightSidebarOpen
-        ? 'translate-x-0 opacity-100'
-        : 'translate-x-full opacity-0 pointer-events-none'} z-10"
-    >
-      <div class="flex flex-col h-full">
-        <div class="p-4 border-b border-base-300">
-          <div class="flex items-center justify-between mb-3">
-            <h3 class="text-lg font-semibold flex items-center gap-2">
-              <Folder class="w-5 h-5" />
-              Documents
-            </h3>
-            <button
-              class="btn btn-ghost btn-sm"
-              title="Close Right Sidebar"
-              onclick={toggleRightSidebar}
-            >
-              <PanelLeftOpen class="w-4 h-4 text-base-content/70" />
-            </button>
-          </div>
-
-          <!-- File Filter Input -->
-          <div class="form-control">
-            <input
-              type="text"
-              placeholder="Filter files by name..."
-              bind:value={fileFilter}
-              disabled={uploadedFiles.length === 0 || loadingFiles}
-              class="input input-bordered input-sm w-full"
-            />
-          </div>
-        </div>
-        {#if loadingFiles}
-          <LoadingState />
-        {:else}
-          <div class="flex-1 overflow-y-auto p-4">
-            {#if uploadedFiles.length > 0}
-              {#if filteredFiles.length > 0}
-                <div class="space-y-2">
-                  {#each filteredFiles as file}
-                    <div class="card bg-base-100 shadow-sm">
-                      <div class="card-body p-3">
-                        <div class="flex items-start gap-3">
-                          <!-- File Status Icon -->
-                          {#if file.status === 'ready'}
-                            <div title="File processed">
-                              <Check class="w-4 h-4 text-success flex-shrink-0 mt-1" />
-                            </div>
-                          {:else if file.status === 'processing'}
-                            <div title="File still processing">
-                              <Loader
-                                class="w-4 h-4 text-warning animate-spin flex-shrink-0 mt-1"
-                              />
-                            </div>
-                          {:else if file.status === 'failed'}
-                            <div title="File processing failed">
-                              <CircleOff class="w-4 h-4 text-error flex-shrink-0 mt-1" />
-                            </div>
-                          {:else}
-                            <div title="File not processed">
-                              <PackageSearch
-                                class="w-4 h-4 text-base-content/50 flex-shrink-0 mt-1"
-                              />
-                            </div>
-                          {/if}
-
-                          <!-- File Info -->
-                          <div class="flex-1 min-w-0 z-11" title={file.file_name}>
-                            <p class="font-medium text-sm truncate">
-                              {file.file_name}
-                            </p>
-                            <p class="text-xs text-base-content/70">
-                              {moment(file.created_at).format('DD/MM/YYYY HH:mm')}
-                            </p>
-                          </div>
-
-                          <!-- Actions Menu -->
-                          <FileActionsPopover
-                            {file}
-                            isDownloading={downloadingFileLoading[file.id]}
-                            isRemoving={removingFileLoading[file.id]}
-                            isProcessing={processingFileLoading[file.id]}
-                            isGeneratingSummary={generatingSummaryLoading[file.id]}
-                            ondownload={handleFileDownload}
-                            onremove={handleFileRemove}
-                            onprocess={handleFileProcess}
-                            onretry={handleFileRetry}
-                            onopensummary={handleFileOpenSummary}
-                            ongeneratesummary={handleFileGenerateSummary}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                <div class="text-center py-8">
-                  <div class="text-4xl mb-4">🔍</div>
-                  <p class="text-base-content/70">No files match your filter</p>
-                  <p class="text-sm text-base-content/50 mt-1">Try a different search term</p>
-                </div>
-              {/if}
-            {:else}
-              <div class="text-center py-8">
-                <div class="text-4xl mb-4">📄</div>
-                <p class="text-base-content/70">No documents uploaded yet</p>
-                <button
-                  class="btn btn-primary btn-sm mt-4 gap-2"
-                  onclick={handleUploadClick}
-                  disabled={uploadLoading}
-                >
-                  {#if uploadLoading}
-                    <span class="loading loading-spinner loading-xs"></span>
-                  {:else}
-                    <Upload class="w-4 h-4" />
-                  {/if}
-                  Upload Document
-                </button>
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
-
-  <!-- Main Content Area -->
-  <div
-    class="bg-base-100/30 h-screen flex flex-col transition-all duration-300 {leftSidebarOpen
-      ? 'ml-50'
-      : 'ml-0'} {rightSidebarOpen ? 'mr-60' : 'mr-0'}"
-  >
-    <!-- Top Bar with Toggle Buttons -->
-    <div class="flex items-center justify-between p-4 border-b border-base-300">
-      <div class="flex justify-start">
-        <button class="btn btn-ghost btn-sm" onclick={toggleLeftSidebar} title="Open Left Sidebar">
-          {#if !leftSidebarOpen}
-            <ChevronRight class="w-4 h-4 text-base-content/70" />
-          {/if}
-        </button>
-      </div>
-
-      <h1 class="text-xl font-semibold">
-        {#if $selectedProject}
-          {$selectedProject.name}
-        {/if}
-      </h1>
-
-      {#if $selectedProject}
-        <button
-          class="btn btn-ghost btn-sm"
-          onclick={toggleRightSidebar}
-          title="Open Right Sidebar"
-        >
-          {#if !rightSidebarOpen}
-            <ChevronLeft class="w-4 h-4 text-base-content/70" />
-          {/if}
-        </button>
-      {/if}
-    </div>
-
-    <!-- Upload Error Display -->
-    {#if uploadError}
-      <div class="alert alert-error mx-4 mt-4">
-        <X class="w-4 h-4" />
-        {uploadError}
-        <button class="btn btn-sm btn-ghost" onclick={() => (uploadError = '')}>
-          <X class="w-4 h-4" />
-        </button>
-      </div>
-    {/if}
-
-    <!-- Main Content -->
-    <div class="flex-1 flex flex-col w-full">
-      {#if !$selectedProject}
-        <!-- Empty State - No Project Selected -->
-        <div class="flex-1 flex items-center justify-center">
-          <div class="text-center space-y-6 max-w-md w-full">
-            <div class="text-6xl">🧠</div>
-            <h2 class="text-3xl font-bold">Welcome to InsightSphere</h2>
-            <p class="text-base-content/70 text-lg">
-              Select a project to start chatting with your documents or create a new project to get
-              started.
-            </p>
-            {#if $projects.length === 0}
-              <button class="btn btn-primary btn-lg gap-2" onclick={handleCreateNewProject}>
-                <Plus class="w-5 h-5" />
-                Create Your First Project
-              </button>
-            {/if}
-          </div>
-        </div>
-      {:else}
-        <!-- Chat Interface -->
-        <div class="flex-1 flex flex-col">
-          <!-- Chat Messages Area -->
-          <div class="flex-1 p-6 overflow-y-auto">
-            <div class="w-full">
-              <div class="text-center space-y-4">
-                <div class="text-4xl">💬</div>
-                <h3 class="text-2xl font-semibold">Start a conversation</h3>
-                <p class="text-base-content/70">
-                  Ask questions about your documents in {$selectedProject.name}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Chat Input Area -->
-          <div class="p-6 border-t border-base-300">
-            <div class="w-full">
-              <div class="flex gap-4">
-                <div class="flex-1 relative">
-                  <input
-                    type="text"
-                    placeholder="Ask anything about your documents..."
-                    class="input input-bordered w-full pr-12"
-                  />
-                  <button
-                    class="btn btn-ghost btn-sm absolute right-2 top-1/2 transform -translate-y-1/2"
-                  >
-                    <MessageSquare class="w-4 h-4" />
-                  </button>
-                </div>
-                <button
-                  class="btn btn-primary gap-2"
-                  onclick={handleUploadClick}
-                  disabled={uploadLoading}
-                >
-                  {#if uploadLoading}
-                    <span class="loading loading-spinner loading-xs"></span>
-                  {:else}
-                    <Upload class="w-4 h-4" />
-                  {/if}
-                  Upload
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
-    </div>
-  </div>
+  <!-- Main Content -->
+  <MainContent
+    bind:leftSidebarOpen
+    bind:rightSidebarOpen
+    bind:uploadError
+    bind:uploadLoading
+    onToggleLeftSidebar={toggleLeftSidebar}
+    onToggleRightSidebar={toggleRightSidebar}
+    onCreateNewProject={handleCreateNewProject}
+    onUploadClick={handleUploadClick}
+    onClearUploadError={() => (uploadError = '')}
+  />
 </div>
 
 <!-- Create Project Modal -->
