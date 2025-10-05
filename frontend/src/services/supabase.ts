@@ -145,12 +145,25 @@ export const deleteDocument = async (fileId: string, projectId: string, userId: 
 export const getProjectFiles = async (projectId: string, userId: string) => {
   const { data, error } = await supabase
     .from('project_files')
-    .select('*')
+    .select(
+      'id, project_id, file_name, storage_path, file_id, created_at, user_id, status, is_summary_exist'
+    )
     .eq('project_id', projectId)
     .eq('user_id', userId);
 
   if (error) throw new Error(error.message);
   return data as ProjectFile[];
+};
+
+export const getProjectFileSummary = async (projectId: string, userId: string) => {
+  const { data, error } = await supabase
+    .from('project_files')
+    .select('id, summary')
+    .eq('project_id', projectId)
+    .eq('user_id', userId);
+
+  if (error) throw new Error(error.message);
+  return data as { id: string; summary: string | null }[];
 };
 
 export const downloadFile = async (storagePath: string): Promise<void> => {

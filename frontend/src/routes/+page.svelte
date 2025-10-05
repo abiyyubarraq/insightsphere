@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { UserDashboard, UserHeader, LoadingState, AuthButtons } from '../lib/components/home';
+  import { UserDashboard, LoadingState, AuthButtons } from '../lib/components/home';
   import { isAuthenticated, loading, user } from '../stores/auth';
   import { projects as projectsStore, type Project } from '../stores/project';
   export let data: { projects: Project[] };
@@ -15,28 +15,13 @@
 </svelte:head>
 
 {#if $loading}
-  <!-- Loading State -->
   <section class="container mx-auto p-8">
     <div class="text-center">
       <LoadingState />
     </div>
   </section>
 {:else if $isAuthenticated && $user}
-  <!-- Authenticated Layout -->
-  <div
-    class="relative min-h-screen bg-cover bg-center bg-no-repeat"
-    style="background-image: url('/dashboard.png');"
-  >
-    <!-- User Header -->
-    <header class="absolute top-0 right-0 p-6 z-10">
-      <UserHeader />
-    </header>
-
-    <!-- Main Dashboard -->
-    <div class="min-h-screen flex items-center justify-center p-8">
-      <UserDashboard />
-    </div>
-  </div>
+  <UserDashboard />
 {:else}
   <!-- Non-authenticated Layout -->
   <div class="relative min-h-screen bg-black">

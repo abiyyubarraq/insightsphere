@@ -1,6 +1,6 @@
 # API Service
 
-Deno (≥2.4) + Hono + TypeScript RAG orchestration service
+Deno (≥2.5) + Hono + TypeScript RAG orchestration service
 
 ## Development
 

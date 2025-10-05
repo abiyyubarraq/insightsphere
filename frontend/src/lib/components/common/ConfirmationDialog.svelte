@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { X, AlertTriangle } from 'lucide-svelte';
-
   export let isOpen = false;
   export let title = 'Confirm Action';
   export let message = 'Are you sure you want to proceed?';

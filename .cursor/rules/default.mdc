@@ -11,9 +11,9 @@ The application allows users to create multiple projects, upload documents, and 
 ---
 ## 🏗️ Project Architecture
 
-- **`frontend/`** – SvelteKit 2 + TypeScript + TailwindCSS v4 + DaisyUI + Lucide icons
-- **`api/`** – Deno (≥2.4) + Hono for API + RAG orchestration
-- **`doc-parser/`** – Go 1.22 + UniPDF/gooxml for PDF/DOCX parsing
+- **`frontend/`** – Svelte 5 + SvelteKit 2 + TypeScript + TailwindCSS v4 + DaisyUI + Lucide icons
+- **`api/`** – Deno (≥2.5) + Hono for API + RAG orchestration
+- **`doc-parser/`** – Go 1.24 + UniPDF/gooxml for PDF/DOCX parsing
 - **`vector-utils/`** – Qdrant client helpers for embedding storage/retrieval
 - **`shared/`** – Shared types and utilities
 - **`docker/`, `dev/`** – Local development & deployment configs

@@ -1,21 +1,33 @@
 <script lang="ts">
-  import { MoreVertical, Download, Trash2, Play, RotateCcw } from 'lucide-svelte';
+  import {
+    MoreVertical,
+    Download,
+    Trash2,
+    Play,
+    RotateCcw,
+    FileText,
+    Sparkles,
+  } from 'lucide-svelte';
   import { createEventDispatcher } from 'svelte';
 
   export let file: {
     id: string;
     file_name: string;
     status: string | null;
+    is_summary_exist: boolean;
   };
   export let isDownloading = false;
   export let isRemoving = false;
   export let isProcessing = false;
+  export let isGeneratingSummary = false;
 
   const dispatch = createEventDispatcher<{
     download: { fileId: string };
     remove: { fileId: string };
     process: { fileId: string };
     retry: { fileId: string };
+    openSummary: { fileId: string };
+    generateSummary: { fileId: string };
   }>();
 
   const handleDownload = () => {
@@ -32,6 +44,14 @@
 
   const handleRetry = () => {
     dispatch('retry', { fileId: file.id });
+  };
+
+  const handleOpenSummary = () => {
+    dispatch('openSummary', { fileId: file.id });
+  };
+
+  const handleGenerateSummary = () => {
+    dispatch('generateSummary', { fileId: file.id });
   };
 </script>
 
@@ -58,6 +78,36 @@
         {/if}
       </button>
     </li>
+
+    <!-- Summary Action -->
+    {#if file.is_summary_exist}
+      <li>
+        <button class="flex items-center gap-3" on:click={handleOpenSummary}>
+          <FileText class="w-4 h-4 text-info" />
+          <span class="text-sm">Open Summary</span>
+        </button>
+      </li>
+    {:else}
+      <li>
+        <button
+          class="flex items-center gap-3"
+          on:click={handleGenerateSummary}
+          disabled={isGeneratingSummary}
+        >
+          <Sparkles class="w-4 h-4 text-secondary" />
+          <span class="text-sm">
+            {#if isGeneratingSummary}
+              Generating...
+            {:else}
+              Generate Summary
+            {/if}
+          </span>
+          {#if isGeneratingSummary}
+            <span class="loading loading-spinner loading-xs ml-auto"></span>
+          {/if}
+        </button>
+      </li>
+    {/if}
 
     <!-- Process/Retry Action -->
     {#if file.status === 'failed'}
