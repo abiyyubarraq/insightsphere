@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { Plus, Search, Library, ChevronDown, ChevronUp, PanelRightOpen } from 'lucide-svelte';
+  import {
+    Plus,
+    Search,
+    Library,
+    ChevronDown,
+    ChevronUp,
+    PanelRightOpen,
+    Edit3,
+    Trash2,
+  } from 'lucide-svelte';
   import { projects, selectedProject, type Project } from '../../../stores/project';
   import UserHeader from './UserHeader.svelte';
 
@@ -11,6 +20,8 @@
     onNavClick,
     onToggleProjectsList,
     onRefreshProjectFiles,
+    onRenameProject,
+    onDeleteProject,
   } = $props<{
     leftSidebarOpen?: boolean;
     showProjectsList?: boolean;
@@ -19,6 +30,8 @@
     onNavClick: (_navItem: string) => void;
     onToggleProjectsList: () => void;
     onRefreshProjectFiles: (_project: Project) => Promise<void>;
+    onRenameProject: (_project: Project) => void;
+    onDeleteProject: (_project: Project) => void;
   }>();
 </script>
 
@@ -85,19 +98,48 @@
           </button>
           <div class="space-y-1 {showProjectsList ? 'block' : 'hidden'}">
             {#each $projects as project}
-              <button
-                class="hover:cursor-pointer text-left truncate w-full px-3 py-2 rounded-md text-sm hover:bg-primary/20 transition-colors {$selectedProject?.id ===
+              <div
+                class="group flex items-center gap-1 px-3 py-2 rounded-md hover:bg-primary/20 transition-colors {$selectedProject?.id ===
                 project.id
-                  ? 'bg-primary/20 text-primary'
-                  : 'text-base-content/80'}"
-                onclick={async () => {
-                  if ($selectedProject?.id !== project.id) {
-                    await onRefreshProjectFiles(project);
-                  }
-                }}
+                  ? 'bg-primary/20'
+                  : ''}"
               >
-                {project.name}
-              </button>
+                <button
+                  class="flex-1 text-left truncate text-sm hover:cursor-pointer {$selectedProject?.id ===
+                  project.id
+                    ? 'text-primary'
+                    : 'text-base-content/80'}"
+                  onclick={async () => {
+                    if ($selectedProject?.id !== project.id) {
+                      await onRefreshProjectFiles(project);
+                    }
+                  }}
+                >
+                  {project.name}
+                </button>
+                <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    class="btn btn-ghost btn-xs p-1"
+                    title="Rename project"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      onRenameProject(project);
+                    }}
+                  >
+                    <Edit3 class="w-3 h-3" />
+                  </button>
+                  <button
+                    class="btn btn-ghost btn-xs p-1 text-error hover:bg-error/20"
+                    title="Delete project"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      onDeleteProject(project);
+                    }}
+                  >
+                    <Trash2 class="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
             {/each}
           </div>
         </div>

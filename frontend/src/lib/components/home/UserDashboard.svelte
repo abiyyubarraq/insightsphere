@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus, X } from 'lucide-svelte';
+  import { Plus, X, Edit3 } from 'lucide-svelte';
   import {
     projects,
     selectedProject,
@@ -9,6 +9,9 @@
   import { user } from '../../../stores/auth';
   import {
     createProject,
+    updateProject,
+    deleteProject,
+    uploadDocument,
     deleteDocument,
     getProjectFiles,
     getProjectFileSummary,
@@ -36,6 +39,15 @@
   // Confirmation dialog state
   let showConfirmDialog = $state(false);
   let fileToRemove: { index: number; name: string } | null = $state(null);
+
+  // Project management state
+  let showRenameModal = $state(false);
+  let showDeleteConfirmDialog = $state(false);
+  let projectToRename: Project | null = $state(null);
+  let projectToDelete: Project | null = $state(null);
+  let renameProjectName = $state('');
+  let renameLoading = $state(false);
+  let deleteLoading = $state(false);
 
   // File processing state
   let processingFileLoading: Record<string, boolean> = $state({});
@@ -106,8 +118,63 @@
     }
   };
 
-  const handleFileUpload = async () => {
-    // TODO: Implement file upload functionality
+  const handleFileUpload = async (event: Event) => {
+    const target = event.target as HTMLInputElement;
+    const files = target.files;
+
+    if (!files || files.length === 0) return;
+    if (!$selectedProject || !$user) {
+      uploadError = 'Please select a project first';
+      return;
+    }
+
+    // Validate all files first
+    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt'];
+    const maxSize = 100 * 1024 * 1024; // 100MB in bytes
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      // Validate file type
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (!allowedTypes.includes(fileExtension)) {
+        uploadError = `File "${file.name}" is not a valid type (PDF, DOC, DOCX, or TXT)`;
+        return;
+      }
+
+      // Validate file size
+      if (file.size > maxSize) {
+        uploadError = `File "${file.name}" is too large (must be less than 100MB)`;
+        return;
+      }
+    }
+
+    await withLoading(
+      async () => {
+        // Upload all files sequentially
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          await uploadDocument(file, $selectedProject.id, $user.id);
+        }
+
+        // Refresh the files list to show the new files
+        const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
+        uploadedFiles = updatedFiles;
+
+        // Clear the file input
+        if (fileInput) {
+          fileInput.value = '';
+        }
+
+        return { success: true, uploadedCount: files.length };
+      },
+      (loadingState) => {
+        uploadLoading = loadingState;
+      },
+      (errorMsg) => {
+        uploadError = errorMsg;
+      }
+    );
   };
 
   const removeFile = async (index: number) => {
@@ -274,6 +341,91 @@
   const toggleShowProjectsList = () => {
     showProjectsList = !showProjectsList;
   };
+
+  // Project management handlers
+  const handleRenameProject = (project: Project) => {
+    projectToRename = project;
+    renameProjectName = project.name;
+    showRenameModal = true;
+  };
+
+  const handleDeleteProject = (project: Project) => {
+    projectToDelete = project;
+    showDeleteConfirmDialog = true;
+  };
+
+  const confirmRenameProject = async () => {
+    if (!projectToRename || !renameProjectName.trim() || !$user) return;
+
+    const project = projectToRename; // Store reference to avoid null check issues
+    await withLoading(
+      async () => {
+        const updatedProject = await updateProject(project.id, $user.id, renameProjectName.trim());
+
+        // Update the projects list
+        projects.update((arr) => arr.map((p) => (p.id === updatedProject.id ? updatedProject : p)));
+
+        // Update selected project if it's the one being renamed
+        if ($selectedProject?.id === updatedProject.id) {
+          selectedProject.set(updatedProject);
+        }
+
+        // Close modal and reset state
+        showRenameModal = false;
+        projectToRename = null;
+        renameProjectName = '';
+      },
+      (loadingState) => {
+        renameLoading = loadingState;
+      },
+      (errorMsg) => {
+        error = errorMsg;
+      }
+    );
+  };
+
+  const cancelRenameProject = () => {
+    showRenameModal = false;
+    projectToRename = null;
+    renameProjectName = '';
+    clearErrors();
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete || !$user) return;
+
+    const project = projectToDelete; // Store reference to avoid null check issues
+    await withLoading(
+      async () => {
+        await deleteProject(project.id, $user.id);
+
+        // Remove from projects list
+        projects.update((arr) => arr.filter((p) => p.id !== project.id));
+
+        // Clear selected project if it's the one being deleted
+        if ($selectedProject?.id === project.id) {
+          selectedProject.set(null);
+          uploadedFiles = [];
+        }
+
+        // Close dialog and reset state
+        showDeleteConfirmDialog = false;
+        projectToDelete = null;
+      },
+      (loadingState) => {
+        deleteLoading = loadingState;
+      },
+      (errorMsg) => {
+        error = errorMsg;
+      }
+    );
+  };
+
+  const cancelDeleteProject = () => {
+    showDeleteConfirmDialog = false;
+    projectToDelete = null;
+    clearErrors();
+  };
 </script>
 
 <!-- Hidden File Input -->
@@ -282,6 +434,7 @@
   bind:this={fileInput}
   onchange={handleFileUpload}
   accept=".pdf,.doc,.docx,.txt"
+  multiple
   class="hidden"
 />
 
@@ -299,6 +452,8 @@
     onNavClick={handleNavClick}
     onToggleProjectsList={toggleShowProjectsList}
     onRefreshProjectFiles={refreshProjectFiles}
+    onRenameProject={handleRenameProject}
+    onDeleteProject={handleDeleteProject}
   />
 
   <!-- Right Sidebar -->
@@ -430,3 +585,60 @@
     </div>
   </div>
 {/if}
+
+<!-- Rename Project Modal -->
+{#if showRenameModal}
+  <div class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg mb-4">Rename Project</h3>
+
+      {#if error}
+        <div class="alert alert-error mb-4">
+          <X class="w-4 h-4" />
+          {error}
+        </div>
+      {/if}
+
+      <div class="form-control">
+        <input
+          id="rename-project-input"
+          type="text"
+          bind:value={renameProjectName}
+          placeholder="Enter new project name"
+          class="input input-bordered w-full"
+          onkeydown={(e) => e.key === 'Enter' && confirmRenameProject()}
+        />
+      </div>
+
+      <div class="modal-action">
+        <button class="btn btn-ghost" onclick={cancelRenameProject}> Cancel </button>
+        <button
+          class="btn btn-primary gap-2"
+          onclick={confirmRenameProject}
+          disabled={renameLoading || !renameProjectName.trim()}
+        >
+          {#if renameLoading}
+            <span class="loading loading-spinner loading-xs"></span>
+          {:else}
+            <Edit3 class="w-4 h-4" />
+          {/if}
+          Rename Project
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Delete Project Confirmation Dialog -->
+<ConfirmationDialog
+  bind:isOpen={showDeleteConfirmDialog}
+  title="Delete Project"
+  message="Are you sure you want to delete '{projectToDelete?.name}'? This will permanently delete the project and all its files. This action cannot be undone."
+  confirmText="Delete"
+  cancelText="Cancel"
+  confirmClass="btn-error"
+  icon="danger"
+  loading={deleteLoading}
+  onconfirm={confirmDeleteProject}
+  oncancel={cancelDeleteProject}
+/>

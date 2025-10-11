@@ -77,6 +77,63 @@ export const createProject = async (userId: string, name: string): Promise<Proje
   return data as Project;
 };
 
+export const updateProject = async (
+  projectId: string,
+  userId: string,
+  name: string
+): Promise<Project> => {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ name })
+    .eq('id', projectId)
+    .eq('user_id', userId)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as Project;
+};
+
+export const deleteProject = async (projectId: string, userId: string): Promise<void> => {
+  // First, get all files in the project to delete them from storage
+  const { data: files, error: filesError } = await supabase
+    .from('project_files')
+    .select('storage_path')
+    .eq('project_id', projectId)
+    .eq('user_id', userId);
+
+  if (filesError) throw new Error(filesError.message);
+
+  // Delete files from storage if any exist
+  if (files && files.length > 0) {
+    const storagePaths = files.map((f) => f.storage_path).filter(Boolean);
+    if (storagePaths.length > 0) {
+      const { error: storageError } = await supabase.storage
+        .from('anotherbrainfileplayground')
+        .remove(storagePaths);
+
+      if (storageError) throw new Error(storageError.message);
+    }
+  }
+
+  // Delete project files from database
+  const { error: filesDeleteError } = await supabase
+    .from('project_files')
+    .delete()
+    .eq('project_id', projectId)
+    .eq('user_id', userId);
+
+  if (filesDeleteError) throw new Error(filesDeleteError.message);
+
+  // Finally, delete the project itself
+  const { error } = await supabase
+    .from('projects')
+    .delete()
+    .eq('id', projectId)
+    .eq('user_id', userId);
+
+  if (error) throw new Error(error.message);
+};
+
 // ---------------- DOCUMENT UPLOAD ----------------
 
 export const uploadDocument = async (file: File, projectId: string, userId: string) => {
