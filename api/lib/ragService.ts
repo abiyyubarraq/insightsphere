@@ -15,6 +15,7 @@ export interface RAGQueryOptions {
   similarity_threshold?: number;
   use_short_context?: boolean;
   max_context_length?: number;
+  conversation_history?: string; // Optional conversation context
 }
 
 export interface RAGQueryResult {
@@ -52,6 +53,7 @@ export class RAGService {
       similarity_threshold = 0.3, // Lowered from 0.6 to 0.3 for better results
       use_short_context = false,
       max_context_length = 4000,
+      conversation_history,
     } = options;
 
     try {
@@ -115,10 +117,11 @@ export class RAGService {
         `📝 Context built: ${ragContext.formatted_context.length} characters`,
       );
 
-      // Step 4: Generate LLM response
+      // Step 4: Generate LLM response with optional conversation history
       const llmResponse = await this.generateLLMResponse(
         ragContext.formatted_context,
         query,
+        conversation_history,
       );
 
       console.log(
@@ -200,9 +203,14 @@ export class RAGService {
   private async generateLLMResponse(
     context: string,
     query: string,
+    conversationHistory?: string,
   ): Promise<LLMResponse> {
     try {
-      return await llmClient.generateAnswer(context, query);
+      return await llmClient.generateAnswer(
+        context,
+        query,
+        conversationHistory,
+      );
     } catch (error) {
       console.error("LLM generation failed:", error);
 

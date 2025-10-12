@@ -16,6 +16,7 @@
     getProjectFiles,
     getProjectFileSummary,
     downloadFile,
+    processDocument,
   } from '../../../services/supabase';
   import { withLoading } from '../../../commons/helpers';
   import { ConfirmationDialog } from '../common';
@@ -245,26 +246,70 @@
 
   const handleFileProcess = async (event: CustomEvent<{ fileId: string }>) => {
     const fileId = event.detail.fileId;
-    processingFileLoading[fileId] = true;
-    try {
-      // TODO: Implement file processing API call
-    } catch (error) {
-      uploadError = error instanceof Error ? error.message : 'Failed to process file';
-    } finally {
-      processingFileLoading[fileId] = false;
+    const file = uploadedFiles.find((f) => f.id === fileId);
+
+    if (!file || !$selectedProject || !$user) {
+      uploadError = 'File or project not found';
+      return;
     }
+
+    await withLoading(
+      async () => {
+        const result = await processDocument($selectedProject.id, file.id, file.storage_path);
+
+        if (result.success) {
+          // Refresh the files list to show updated status
+          const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
+          uploadedFiles = updatedFiles;
+
+          console.log(
+            `Document processed successfully: ${result.chunks_created} chunks created in ${result.processing_time_ms}ms`
+          );
+        } else {
+          throw new Error(result.error || 'Processing failed');
+        }
+      },
+      (loadingState) => {
+        processingFileLoading[fileId] = loadingState;
+      },
+      (errorMsg) => {
+        uploadError = errorMsg;
+      }
+    );
   };
 
   const handleFileRetry = async (event: CustomEvent<{ fileId: string }>) => {
     const fileId = event.detail.fileId;
-    processingFileLoading[fileId] = true;
-    try {
-      // TODO: Implement file retry processing API call
-    } catch (error) {
-      uploadError = error instanceof Error ? error.message : 'Failed to retry file processing';
-    } finally {
-      processingFileLoading[fileId] = false;
+    const file = uploadedFiles.find((f) => f.id === fileId);
+
+    if (!file || !$selectedProject || !$user) {
+      uploadError = 'File or project not found';
+      return;
     }
+
+    await withLoading(
+      async () => {
+        const result = await processDocument($selectedProject.id, file.id, file.storage_path);
+
+        if (result.success) {
+          // Refresh the files list to show updated status
+          const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
+          uploadedFiles = updatedFiles;
+
+          console.log(
+            `Document retry processed successfully: ${result.chunks_created} chunks created in ${result.processing_time_ms}ms`
+          );
+        } else {
+          throw new Error(result.error || 'Retry processing failed');
+        }
+      },
+      (loadingState) => {
+        processingFileLoading[fileId] = loadingState;
+      },
+      (errorMsg) => {
+        uploadError = errorMsg;
+      }
+    );
   };
 
   const handleFileOpenSummary = async (event: CustomEvent<{ fileId: string }>) => {
@@ -484,10 +529,10 @@
     bind:rightSidebarOpen
     bind:uploadError
     bind:uploadLoading
+    bind:fileFilter
     onToggleLeftSidebar={toggleLeftSidebar}
     onToggleRightSidebar={toggleRightSidebar}
     onCreateNewProject={handleCreateNewProject}
-    onUploadClick={handleUploadClick}
     onClearUploadError={() => (uploadError = '')}
   />
 </div>

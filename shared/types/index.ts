@@ -1,3 +1,6 @@
+// Re-export chat types
+export * from "./chat.ts";
+
 // Document types
 export interface Document {
 	id: string;

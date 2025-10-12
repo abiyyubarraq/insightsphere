@@ -5,6 +5,7 @@ import { logger } from "hono/logger";
 import { processDocument } from "./routes/documents/process.ts";
 import { searchDocuments } from "./routes/search/query.ts";
 import { getQuerySuggestions, queryProject } from "./routes/projects/query.ts";
+import { sendChatMessage } from "./routes/chat/send.ts";
 import {
   configForm,
   getTestConfig,
@@ -91,6 +92,9 @@ api.post("/search/query", searchDocuments);
 // RAG Query endpoints
 api.post("/projects/:projectId/query", queryProject);
 api.get("/projects/:projectId/query/suggestions", getQuerySuggestions);
+
+// Chat endpoints (Conversational RAG)
+api.post("/projects/:projectId/chat", sendChatMessage);
 
 // Test endpoints for browser-based testing
 api.get("/test/dashboard", testDashboard);

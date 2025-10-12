@@ -1,7 +1,57 @@
 import { createClient, type User } from '@supabase/supabase-js';
+import type {
+  GetConversationHistoryResponse,
+  SendMessageRequest,
+  SendMessageResponse,
+} from '../../../shared/types/chat';
+import type { Project, ProjectFile } from '../stores/project';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/v1';
+
+/**
+ * Send a chat message to the project (conversational RAG)
+ */
+export const sendChatMessage = async (
+  projectId: string,
+  message: string,
+  conversationId?: string,
+  options?: SendMessageRequest['options']
+): Promise<SendMessageResponse> => {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+
+  if (!token) throw new Error('Not authenticated');
+
+  const request: SendMessageRequest = {
+    message,
+    conversation_id: conversationId,
+    options: options || {
+      max_chunks: 20,
+      similarity_threshold: 0.25,
+      use_conversation_history: true,
+      max_history_messages: 10,
+    },
+  };
+
+  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || errorData.details || 'Failed to send message');
+  }
+
+  const data: SendMessageResponse = await response.json();
+  return data;
+};
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -53,9 +103,6 @@ export const logout = async (): Promise<void> => {
   const { error } = await supabase.auth.signOut();
   if (error) throw new Error(error.message);
 };
-
-// PROJECT HELPERS
-import type { Project, ProjectFile } from '../stores/project';
 
 export const fetchProjects = async (userId: string): Promise<Project[]> => {
   const { data, error } = await supabase
@@ -133,8 +180,6 @@ export const deleteProject = async (projectId: string, userId: string): Promise<
 
   if (error) throw new Error(error.message);
 };
-
-// ---------------- DOCUMENT UPLOAD ----------------
 
 export const uploadDocument = async (file: File, projectId: string, userId: string) => {
   if (!file) throw new Error('No file selected');
@@ -271,4 +316,194 @@ export const getFileUrl = async (storagePath: string): Promise<string> => {
     console.error('Failed to get file URL:', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to generate download URL');
   }
+};
+
+/**
+ * Get conversation history for a project (direct Supabase query)
+ */
+export const getConversationHistory = async (
+  projectId: string,
+  limit = 50
+): Promise<GetConversationHistoryResponse> => {
+  const session = await supabase.auth.getSession();
+  if (!session.data.session) throw new Error('Not authenticated');
+
+  const userId = session.data.session.user.id;
+
+  try {
+    // Get or create conversation
+    let { data: conversation, error: convError } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .single();
+
+    if (convError && convError.code !== 'PGRST116') {
+      throw new Error(`Failed to get conversation: ${convError.message}`);
+    }
+
+    // Create conversation if it doesn't exist
+    if (!conversation) {
+      const { data: newConv, error: createError } = await supabase
+        .from('chat_conversations')
+        .insert({
+          project_id: projectId,
+          user_id: userId,
+          title: 'New Conversation',
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        throw new Error(`Failed to create conversation: ${createError.message}`);
+      }
+      conversation = newConv;
+    }
+
+    // Get messages
+    const { data: messages, error: messagesError } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('conversation_id', conversation.id)
+      .order('created_at', { ascending: true })
+      .limit(limit);
+
+    if (messagesError) {
+      throw new Error(`Failed to get messages: ${messagesError.message}`);
+    }
+
+    // Get citations for assistant messages
+    const assistantMessageIds =
+      messages?.filter((m) => m.role === 'assistant').map((m) => m.id) || [];
+
+    let citations: any[] = [];
+    if (assistantMessageIds.length > 0) {
+      const { data: citationsData, error: citationsError } = await supabase
+        .from('chat_citations')
+        .select('*')
+        .in('message_id', assistantMessageIds)
+        .order('similarity_score', { ascending: false });
+
+      if (citationsError) {
+        console.warn('Failed to get citations:', citationsError);
+      } else {
+        citations = citationsData || [];
+      }
+    }
+
+    // Group citations by message_id
+    const citationsByMessage = citations.reduce(
+      (acc, citation) => {
+        if (!acc[citation.message_id]) {
+          acc[citation.message_id] = [];
+        }
+        acc[citation.message_id].push(citation);
+        return acc;
+      },
+      {} as Record<string, any[]>
+    );
+
+    // Attach citations to messages
+    const messagesWithCitations =
+      messages?.map((message) => ({
+        ...message,
+        citations: message.role === 'assistant' ? citationsByMessage[message.id] || [] : undefined,
+      })) || [];
+
+    return {
+      success: true,
+      conversation,
+      messages: messagesWithCitations,
+      has_more: messagesWithCitations.length >= limit,
+    };
+  } catch (error) {
+    console.error('Failed to get conversation history:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to load conversation history');
+  }
+};
+
+/**
+ * Delete conversation history for a project (direct Supabase query)
+ */
+export const deleteConversationHistory = async (projectId: string): Promise<void> => {
+  const session = await supabase.auth.getSession();
+  if (!session.data.session) throw new Error('Not authenticated');
+
+  const userId = session.data.session.user.id;
+
+  try {
+    // Get conversation
+    const { data: conversation, error: convError } = await supabase
+      .from('chat_conversations')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .single();
+
+    if (convError) {
+      if (convError.code === 'PGRST116') {
+        // Conversation doesn't exist, nothing to delete
+        return;
+      }
+      throw new Error(`Failed to get conversation: ${convError.message}`);
+    }
+
+    if (!conversation) return;
+
+    // Delete conversation (cascades to messages and citations)
+    const { error: deleteError } = await supabase
+      .from('chat_conversations')
+      .delete()
+      .eq('id', conversation.id)
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete conversation: ${deleteError.message}`);
+    }
+  } catch (error) {
+    console.error('Failed to delete conversation history:', error);
+    throw new Error(error instanceof Error ? error.message : 'Failed to delete conversation');
+  }
+};
+
+/**
+ * Process a document (extract text, generate embeddings, store in Qdrant)
+ */
+export const processDocument = async (
+  projectId: string,
+  documentId: string,
+  storagePath: string
+): Promise<{
+  success: boolean;
+  document_id: string;
+  chunks_created: number;
+  processing_time_ms: number;
+  error?: string;
+}> => {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}/documents/process`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      document_id: documentId,
+      storage_path: storagePath,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || errorData.details || 'Failed to process document');
+  }
+
+  const data = await response.json();
+  return data;
 };

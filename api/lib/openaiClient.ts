@@ -22,6 +22,9 @@ export interface ChatCompletionRequest {
   max_tokens?: number;
   temperature?: number;
   top_p?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  response_format?: { type: "text" | "json_object" };
 }
 
 export interface ChatCompletionResponse {
@@ -56,7 +59,9 @@ export class OpenAIClient {
     try {
       const response = await this.client.embeddings.create({
         model: request.model || "text-embedding-3-small",
-        input: request.text,
+        input: request.text.replace(/\s+/g, " ") // collapse whitespace
+          .replace(/[^\x20-\x7E]/g, "") // remove non-ASCII if docs mixed
+          .trim(),
         encoding_format: "float",
       });
 
@@ -123,6 +128,15 @@ export class OpenAIClient {
         max_tokens: request.max_tokens || 500,
         temperature: request.temperature || 0.3,
         top_p: request.top_p || 0.9,
+        ...(request.presence_penalty !== undefined && {
+          presence_penalty: request.presence_penalty,
+        }),
+        ...(request.frequency_penalty !== undefined && {
+          frequency_penalty: request.frequency_penalty,
+        }),
+        ...(request.response_format && {
+          response_format: request.response_format,
+        }),
       });
 
       if (!response.choices || response.choices.length === 0) {
