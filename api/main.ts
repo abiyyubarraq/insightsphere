@@ -23,6 +23,7 @@ import {
   testVectorStats,
   updateTestConfig,
 } from "./routes/test/index.ts";
+import { generateSummary } from "./routes/documents/generateSummary.ts";
 
 const app = new Hono();
 
@@ -32,7 +33,7 @@ app.use(
   cors({
     origin: ["http://localhost:5173", "https://insightsphere.app"],
     credentials: true,
-  }),
+  })
 );
 app.use("*", logger());
 
@@ -66,9 +67,9 @@ api.post("/chat/stream", async (c) => {
       let index = 0;
       const interval = setInterval(() => {
         if (index < words.length) {
-          const data = `data: ${
-            JSON.stringify({ content: `${words[index]} ` })
-          }\n\n`;
+          const data = `data: ${JSON.stringify({
+            content: `${words[index]} `,
+          })}\n\n`;
           controller.enqueue(new TextEncoder().encode(data));
           index++;
         } else {
@@ -85,6 +86,7 @@ api.post("/chat/stream", async (c) => {
 
 // Document processing endpoint
 api.post("/documents/process", processDocument);
+api.post("/documents/generateSummary", generateSummary);
 
 // Search endpoint (RAG)
 api.post("/search/query", searchDocuments);

@@ -27,7 +27,7 @@ export class SupabaseService {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error(
-        "Missing Supabase configuration. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set.",
+        "Missing Supabase configuration. Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set."
       );
     }
 
@@ -38,8 +38,8 @@ export class SupabaseService {
       },
     });
 
-    this.bucketName = Deno.env.get("SUPABASE_STORAGE_BUCKET") ||
-      "anotherbrainfileplayground";
+    this.bucketName =
+      Deno.env.get("SUPABASE_STORAGE_BUCKET") || "anotherbrainfileplayground";
   }
 
   /**
@@ -73,7 +73,7 @@ export class SupabaseService {
       throw new Error(
         `Failed to download file from storage: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
@@ -83,7 +83,7 @@ export class SupabaseService {
    */
   async getDocument(
     documentId: string,
-    userId: string,
+    userId: string
   ): Promise<DocumentRecord> {
     try {
       const { data, error } = await this.client
@@ -107,7 +107,7 @@ export class SupabaseService {
       throw new Error(
         `Failed to fetch document: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
@@ -132,7 +132,7 @@ export class SupabaseService {
       }
 
       console.log(
-        `🔑 Admin: Retrieved document ${documentId} for user ${data.user_id}`,
+        `🔑 Admin: Retrieved document ${documentId} for user ${data.user_id}`
       );
       return data as DocumentRecord;
     } catch (error) {
@@ -140,7 +140,7 @@ export class SupabaseService {
       throw new Error(
         `Failed to fetch document as admin: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
@@ -152,8 +152,10 @@ export class SupabaseService {
     documentId: string,
     updates: {
       status?: DocumentRecord["status"];
+      summary?: string | null;
       metadata?: Record<string, any>;
-    },
+      is_summary_exist?: boolean;
+    }
   ): Promise<void> {
     try {
       const updateData: any = {
@@ -176,7 +178,7 @@ export class SupabaseService {
       throw new Error(
         `Failed to update document: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
@@ -186,7 +188,7 @@ export class SupabaseService {
    */
   async validateProjectAccess(
     projectId: string,
-    userId: string,
+    userId: string
   ): Promise<boolean> {
     try {
       const { data, error } = await this.client
@@ -211,10 +213,13 @@ export class SupabaseService {
    * Get user info from JWT token
    */
   async getUserFromToken(
-    token: string,
+    token: string
   ): Promise<{ id: string; email?: string }> {
     try {
-      const { data: { user }, error } = await this.client.auth.getUser(token);
+      const {
+        data: { user },
+        error,
+      } = await this.client.auth.getUser(token);
 
       if (error || !user) {
         throw new Error("Invalid or expired token");
@@ -253,7 +258,7 @@ export class SupabaseService {
       throw new Error(
         `Failed to create temporary file: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
@@ -276,7 +281,7 @@ export class SupabaseService {
         } catch {
           // Ignore errors when removing directory (it might not be empty)
           console.log(
-            `⚠️ Could not remove temp directory: ${dir} (might not be empty)`,
+            `⚠️ Could not remove temp directory: ${dir} (might not be empty)`
           );
         }
       }
@@ -291,7 +296,7 @@ export class SupabaseService {
    */
   async userHasProjectAccess(
     userId: string,
-    projectId: string,
+    projectId: string
   ): Promise<boolean> {
     try {
       const { data, error } = await this.client
@@ -303,7 +308,7 @@ export class SupabaseService {
 
       if (error || !data) {
         console.log(
-          `❌ User ${userId} does not have access to project ${projectId}`,
+          `❌ User ${userId} does not have access to project ${projectId}`
         );
         return false;
       }

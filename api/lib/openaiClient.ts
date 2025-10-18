@@ -1,3 +1,4 @@
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import OpenAI from "openai";
 
 export interface EmbeddingRequest {
@@ -16,7 +17,13 @@ export interface EmbeddingResponse {
 export interface ChatCompletionRequest {
   messages: Array<{
     role: "system" | "user" | "assistant";
-    content: string;
+    content:
+      | string
+      | Array<{
+          type: "text" | "file";
+          text?: string;
+          file?: { file_id: string };
+        }>;
   }>;
   model?: string;
   max_tokens?: number;
@@ -54,12 +61,13 @@ export class OpenAIClient {
   }
 
   async generateEmbedding(
-    request: EmbeddingRequest,
+    request: EmbeddingRequest
   ): Promise<EmbeddingResponse> {
     try {
       const response = await this.client.embeddings.create({
         model: request.model || "text-embedding-3-small",
-        input: request.text.replace(/\s+/g, " ") // collapse whitespace
+        input: request.text
+          .replace(/\s+/g, " ") // collapse whitespace
           .replace(/[^\x20-\x7E]/g, "") // remove non-ASCII if docs mixed
           .trim(),
         encoding_format: "float",
@@ -81,14 +89,14 @@ export class OpenAIClient {
       throw new Error(
         `Failed to generate embedding: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
 
   async generateBatchEmbeddings(
     texts: string[],
-    model = "text-embedding-3-small",
+    model = "text-embedding-3-small"
   ): Promise<EmbeddingResponse[]> {
     try {
       const response = await this.client.embeddings.create({
@@ -113,18 +121,31 @@ export class OpenAIClient {
       throw new Error(
         `Failed to generate batch embeddings: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
 
   async generateChatCompletion(
-    request: ChatCompletionRequest,
+    request: ChatCompletionRequest
   ): Promise<ChatCompletionResponse> {
     try {
+      // Transform messages to OpenAI format
+      const transformedMessages = request.messages.map((msg) => ({
+        role: msg.role,
+        content:
+          typeof msg.content === "string"
+            ? msg.content
+            : msg.content.map((item) => ({
+                type: item.type,
+                ...(item.text && { text: item.text }),
+                ...(item.file && { file: item.file }),
+              })),
+      }));
+
       const response = await this.client.chat.completions.create({
         model: request.model || "gpt-4o-mini",
-        messages: request.messages,
+        messages: transformedMessages as ChatCompletionMessageParam[],
         max_tokens: request.max_tokens || 500,
         temperature: request.temperature || 0.3,
         top_p: request.top_p || 0.9,
@@ -159,8 +180,63 @@ export class OpenAIClient {
       throw new Error(
         `Failed to generate chat completion: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
+    }
+  }
+
+  async deleteFile(fileId: string): Promise<void> {
+    try {
+      await this.client.files.del(fileId);
+    } catch (error) {
+      console.error("File deletion failed:", error);
+      throw new Error(
+        `Failed to delete file: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  async uploadFile(filePath: string): Promise<string> {
+    try {
+      // Read the file using Deno's file API
+      const fileData = await Deno.readFile(filePath);
+      const fileName = filePath.split("/").pop() || "document";
+
+      // Create a File object from the data
+      const file = new File([fileData], fileName, {
+        type: this.getFileType(fileName),
+      });
+
+      const response = await this.client.files.create({
+        file: file,
+        purpose: "assistants",
+      });
+      return response.id;
+    } catch (error) {
+      console.error("File upload failed:", error);
+      throw new Error(
+        `Failed to upload file to OpenAI: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  private getFileType(fileName: string): string {
+    const extension = fileName.split(".").pop()?.toLowerCase();
+    switch (extension) {
+      case "pdf":
+        return "application/pdf";
+      case "docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      case "doc":
+        return "application/msword";
+      case "txt":
+        return "text/plain";
+      default:
+        return "application/octet-stream";
     }
   }
 }

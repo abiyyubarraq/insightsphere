@@ -270,6 +270,45 @@ export const getProjectFileSummary = async (projectId: string, userId: string) =
   return data as { id: string; summary: string | null }[];
 };
 
+/**
+ * Generate a summary for a document using the AI service
+ */
+export const generateDocumentSummary = async (
+  projectId: string,
+  documentId: string,
+  storagePath: string
+): Promise<{
+  success: boolean;
+  document_id: string;
+  processing_time_ms: number;
+  error?: string;
+}> => {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}/documents/generateSummary`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      project_id: projectId,
+      document_id: documentId,
+      storage_path: storagePath,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to generate summary');
+  }
+
+  return await response.json();
+};
+
 export const downloadFile = async (storagePath: string): Promise<void> => {
   try {
     // Get the file from Supabase storage

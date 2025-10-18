@@ -17,9 +17,10 @@
     getProjectFileSummary,
     downloadFile,
     processDocument,
+    generateDocumentSummary,
   } from '../../../services/supabase';
   import { withLoading } from '../../../commons/helpers';
-  import { ConfirmationDialog } from '../common';
+  import { ConfirmationDialog, SummaryMarkdown } from '../common';
   import LeftSidebar from './LeftSidebar.svelte';
   import RightSidebar from './RightSidebar.svelte';
   import MainContent from './MainContent.svelte';
@@ -335,9 +336,42 @@
 
   const handleFileGenerateSummary = async (event: CustomEvent<{ fileId: string }>) => {
     const fileId = event.detail.fileId;
+    const project = $selectedProject;
+
+    if (!project) {
+      uploadError = 'No project selected';
+      return;
+    }
+
     generatingSummaryLoading[fileId] = true;
+    uploadError = '';
+
     try {
-      // TODO: Implement summary generation API call
+      // Find the file in the uploaded files
+      const file = uploadedFiles.find((f) => f.id === fileId);
+      if (!file) {
+        throw new Error('File not found');
+      }
+
+      if (!file.storage_path) {
+        throw new Error('File storage path not available');
+      }
+
+      // Call the generate summary API
+      const result = await generateDocumentSummary(project.id, file.id, file.storage_path);
+
+      if (result.success) {
+        // Refresh the files to get the updated summary
+        await refreshProjectFiles(project);
+
+        // Show success message
+        uploadError = `Summary generated successfully for ${file.file_name}`;
+        setTimeout(() => {
+          uploadError = '';
+        }, 3000);
+      } else {
+        throw new Error(result.error || 'Failed to generate summary');
+      }
     } catch (error) {
       uploadError = error instanceof Error ? error.message : 'Failed to generate summary';
     } finally {
@@ -621,7 +655,9 @@
       </div>
 
       <div class="bg-base-200 rounded-lg p-4 max-h-96 overflow-y-auto">
-        <p class="whitespace-pre-wrap text-sm leading-relaxed">{currentSummary}</p>
+        <div class="text-sm leading-relaxed">
+          <SummaryMarkdown content={currentSummary} />
+        </div>
       </div>
 
       <div class="modal-action">

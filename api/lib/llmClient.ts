@@ -2,7 +2,6 @@
  * LLM Client for RAG Query Processing
  */
 
-import { writeFileSync } from "node:fs";
 import { type ChatCompletionRequest, openaiClient } from "./openaiClient.ts";
 
 export interface LLMResponse {
@@ -341,7 +340,6 @@ export class OpenAILLMClient implements LLMClient {
   ): Promise<LLMResponse> {
     try {
       console.log(`🤖 Calling OpenAI LLM: ${this.model}`);
-      writeFileSync("context.json", JSON.stringify(context, null, 2));
 
       // Build user message with optional conversation history
       const userMessageParts: string[] = [];
@@ -419,7 +417,7 @@ export class OpenAILLMClient implements LLMClient {
       };
       const result = await openaiClient.generateChatCompletion(request);
       console.log(`✅ LLM Response received from ${this.model}`);
-      writeFileSync("result.json", JSON.stringify(result, null, 2));
+
       return {
         answer: result.answer,
         usage: result.usage,
