@@ -53,7 +53,7 @@
       </div> -->
 
       <!-- Hero Section -->
-      <section class="flex items-center justify-center min-h-[80vh] p-8">
+      <section class="flex items-center justify-center min-h-full min-w-full p-8">
         <div class="text-center space-y-8 max-w-4xl">
           <div class="space-y-6">
             <h1 class="text-5xl font-bold text-white gradient-heading h-[12vh]">InsightSphere</h1>

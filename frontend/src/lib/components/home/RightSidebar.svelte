@@ -58,7 +58,7 @@
 <!-- Right Sidebar - Absolute positioned -->
 {#if $selectedProject}
   <div
-    class="bg-base-100/50 absolute right-0 top-0 bottom-0 w-80 border-l border-base-300 border-l-white transition-all duration-300 {rightSidebarOpen
+    class="bg-base-100/50 absolute right-0 top-0 bottom-0 w-80 border-l border-base-300 border-l-white transition-all duration-500 {rightSidebarOpen
       ? 'translate-x-0 opacity-100'
       : 'translate-x-full opacity-0 pointer-events-none'} z-10"
   >

@@ -245,35 +245,6 @@
     ? 'ml-50'
     : 'ml-0'} {rightSidebarOpen ? 'mr-80' : 'mr-0'}"
 >
-  <!-- Top Bar with Toggle Buttons -->
-  <div class="flex items-center justify-between p-4 border-b border-base-300">
-    <div class="flex justify-start">
-      <button class="btn btn-ghost btn-sm" onclick={onToggleLeftSidebar} title="Open Left Sidebar">
-        {#if !leftSidebarOpen}
-          <ChevronRight class="w-4 h-4 text-base-content/70" />
-        {/if}
-      </button>
-    </div>
-
-    <h1 class="text-xl font-semibold">
-      {#if $selectedProject}
-        {$selectedProject.name}
-      {/if}
-    </h1>
-
-    {#if $selectedProject}
-      <button
-        class="btn btn-ghost btn-sm"
-        onclick={onToggleRightSidebar}
-        title="Open Right Sidebar"
-      >
-        {#if !rightSidebarOpen}
-          <ChevronLeft class="w-4 h-4 text-base-content/70" />
-        {/if}
-      </button>
-    {/if}
-  </div>
-
   <!-- Upload Error Display -->
   {#if uploadError}
     <div class="alert alert-error mx-4 mt-4">
@@ -285,10 +256,38 @@
   {/if}
 
   <!-- Main Content -->
-  <div class="flex-1 flex flex-col w-full min-h-0">
+  <div class="flex-1 flex flex-col w-full h-full">
+    {#if !leftSidebarOpen}
+      <button
+        class="absolute left-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
+        onclick={onToggleLeftSidebar}
+        title="Open Left Sidebar"
+      >
+        <ChevronRight class="w-4 h-4 text-base-content/70" />
+      </button>
+    {/if}
+
+    <div class="flex justify-center bg-transparent">
+      <h1 class="text-xl font-semibold flex">
+        {#if $selectedProject}
+          {$selectedProject.name}
+        {/if}
+      </h1>
+    </div>
+
+    {#if $selectedProject && !rightSidebarOpen}
+      <button
+        class="absolute right-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
+        onclick={onToggleRightSidebar}
+        title="Open Right Sidebar"
+      >
+        <ChevronLeft class="w-5 h-5 text-base-content/70" />
+      </button>
+    {/if}
+
     {#if !$selectedProject}
       <!-- Empty State - No Project Selected -->
-      <div class="flex-1 flex items-center justify-center">
+      <div class="flex items-center justify-center mt-33">
         <div class="text-center space-y-6 max-w-md w-full">
           <div class="text-6xl">🧠</div>
           <h2 class="text-3xl font-bold">Welcome to InsightSphere</h2>
@@ -306,7 +305,7 @@
       </div>
     {:else}
       <!-- Chat Interface -->
-      <div class="flex-1 flex flex-col min-h-0">
+      <div class="flex flex-col min-h-0 ml-2">
         <!-- Chat Error Display -->
         {#if chatError}
           <div class="mx-6 flex justify-between gap-2 alert alert-error">
@@ -466,7 +465,7 @@
         </div>
 
         <!-- Chat Input Area -->
-        <div class="p-6 border-t border-base-300">
+        <div class="p-3 border-t border-base-300">
           <div class="w-full max-w-4xl mx-auto">
             <div class="flex gap-4">
               <div class="flex-1 relative">
