@@ -24,6 +24,7 @@
   import LeftSidebar from './LeftSidebar.svelte';
   import RightSidebar from './RightSidebar.svelte';
   import MainContent from './MainContent.svelte';
+  import FileLibraryModal from './FileLibraryModal.svelte';
 
   // State management
   let newProjectName = $state('');
@@ -69,6 +70,7 @@
 
   // Navigation state
   let activeNavItem = $state('');
+  let showFileLibraryModal = $state(false);
 
   // File filtering state
   let fileFilter = $state('');
@@ -262,10 +264,6 @@
           // Refresh the files list to show updated status
           const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
           uploadedFiles = updatedFiles;
-
-          console.log(
-            `Document processed successfully: ${result.chunks_created} chunks created in ${result.processing_time_ms}ms`
-          );
         } else {
           throw new Error(result.error || 'Processing failed');
         }
@@ -405,6 +403,8 @@
     activeNavItem = navItem;
     if (navItem === 'new-project') {
       handleCreateNewProject();
+    } else if (navItem === 'file-library') {
+      showFileLibraryModal = true;
     }
   };
 
@@ -723,3 +723,6 @@
   onconfirm={confirmDeleteProject}
   oncancel={cancelDeleteProject}
 />
+
+<!-- File Library Modal -->
+<FileLibraryModal bind:isOpen={showFileLibraryModal} />

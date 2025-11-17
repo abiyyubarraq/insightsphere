@@ -16,6 +16,7 @@ export interface DocumentRecord {
   created_at: string;
   updated_at: string;
   metadata?: Record<string, any>;
+  image_paths?: Record<number, string>;
 }
 
 export class SupabaseService {
@@ -72,6 +73,49 @@ export class SupabaseService {
       console.error("File download failed:", error);
       throw new Error(
         `Failed to download file from storage: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Upload a file to Supabase Storage
+   */
+  async uploadFile(
+    data: Uint8Array,
+    storagePath: string,
+    contentType: string
+  ): Promise<string> {
+    try {
+      // Convert Uint8Array to ArrayBuffer for Blob compatibility
+      // Create a new ArrayBuffer copy to ensure proper type compatibility
+      const arrayBuffer = new ArrayBuffer(data.length);
+      new Uint8Array(arrayBuffer).set(data);
+      const blob = new Blob([arrayBuffer], { type: contentType });
+
+      const { data: uploadData, error } = await this.client.storage
+        .from(this.bucketName)
+        .upload(storagePath, blob, {
+          contentType,
+          upsert: false,
+          cacheControl: "3600",
+        });
+
+      if (error) {
+        throw new Error(`Failed to upload file: ${error.message}`);
+      }
+
+      if (!uploadData) {
+        throw new Error("No upload data received");
+      }
+
+      console.log(`✅ Uploaded file to storage: ${storagePath}`);
+      return uploadData.path;
+    } catch (error) {
+      console.error("File upload failed:", error);
+      throw new Error(
+        `Failed to upload file to storage: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
@@ -155,6 +199,7 @@ export class SupabaseService {
       summary?: string | null;
       metadata?: Record<string, any>;
       is_summary_exist?: boolean;
+      image_paths?: Record<number, string>;
     }
   ): Promise<void> {
     try {
@@ -318,6 +363,34 @@ export class SupabaseService {
     } catch (error) {
       console.error("Error checking project access:", error);
       return false;
+    }
+  }
+
+  /**
+   * Get a public/signed URL for a file in Supabase Storage
+   */
+  async getPublicUrl(storagePath: string): Promise<string> {
+    try {
+      const { data, error } = await this.client.storage
+        .from(this.bucketName)
+        .createSignedUrl(storagePath, 3600); // 1 hour expiry
+
+      if (error) {
+        throw new Error(`Failed to generate URL: ${error.message}`);
+      }
+
+      if (!data?.signedUrl) {
+        throw new Error("No URL data received");
+      }
+
+      return data.signedUrl;
+    } catch (error) {
+      console.error("Failed to get public URL:", error);
+      throw new Error(
+        `Failed to get public URL: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 

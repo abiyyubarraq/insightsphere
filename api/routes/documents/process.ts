@@ -41,19 +41,26 @@ export async function processDocument(c: Context) {
       body;
 
     if (!project_id || !document_id || !storage_path) {
-      return c.json({
-        success: false,
-        error: "Missing required fields: project_id, document_id, storage_path",
-      } as DocumentProcessResponse, 400);
+      return c.json(
+        {
+          success: false,
+          error:
+            "Missing required fields: project_id, document_id, storage_path",
+        } as DocumentProcessResponse,
+        400
+      );
     }
 
     // Extract and validate Authorization header
     const authHeader = c.req.header("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return c.json({
-        success: false,
-        error: "Missing or invalid Authorization header",
-      } as DocumentProcessResponse, 401);
+      return c.json(
+        {
+          success: false,
+          error: "Missing or invalid Authorization header",
+        } as DocumentProcessResponse,
+        401
+      );
     }
 
     const token = authHeader.replace("Bearer ", "");
@@ -70,17 +77,17 @@ export async function processDocument(c: Context) {
 
       // Get document first to find the user_id
       const adminDocument = await supabaseService.getDocumentAsAdmin(
-        document_id,
+        document_id
       );
       user = { id: adminDocument.user_id, email: "admin@insightsphere.app" };
       console.log(
-        `Processing document ${document_id} for user ${user.id} (admin mode)`,
+        `Processing document ${document_id} for user ${user.id} (admin mode)`
       );
     } else {
       // Regular user mode - validate JWT token
       user = await supabaseService.getUserFromToken(token);
       console.log(
-        `Processing document ${document_id} for user ${user.id} (user mode)`,
+        `Processing document ${document_id} for user ${user.id} (user mode)`
       );
     }
 
@@ -99,13 +106,16 @@ export async function processDocument(c: Context) {
     if (!isAdminMode) {
       const hasProjectAccess = await supabaseService.validateProjectAccess(
         project_id,
-        user.id,
+        user.id
       );
       if (!hasProjectAccess) {
-        return c.json({
-          success: false,
-          error: "Access denied to project",
-        } as DocumentProcessResponse, 403);
+        return c.json(
+          {
+            success: false,
+            error: "Access denied to project",
+          } as DocumentProcessResponse,
+          403
+        );
       }
     } else {
       console.log("🔑 Admin mode: Skipping project access validation");
@@ -121,7 +131,7 @@ export async function processDocument(c: Context) {
     // Create temporary file for Go parser
     tempFilePath = await supabaseService.createTempFile(
       fileData.data,
-      fileData.fileName || "temp_file",
+      fileData.fileName || "temp_file"
     );
 
     // Determine file type and call appropriate parser endpoint
@@ -152,7 +162,7 @@ export async function processDocument(c: Context) {
 
     if (!parseResponse.ok) {
       throw new Error(
-        `Parser service failed: ${parseResponse.status} ${parseResponse.statusText}`,
+        `Parser service failed: ${parseResponse.status} ${parseResponse.statusText}`
       );
     }
 
@@ -165,14 +175,10 @@ export async function processDocument(c: Context) {
     console.log(
       `Parsed document: ${parseResult.text.length} characters, ${
         parseResult.pages?.length || 0
-      } pages`,
+      } pages`
     );
 
-    // Clean up temporary file
-    if (tempFilePath) {
-      await supabaseService.cleanupTempFile(tempFilePath);
-      tempFilePath = null;
-    }
+    // Note: Don't cleanup tempFilePath yet - we need it for image conversion (if PDF)
 
     // Chunk the text with page information
     const pageContents: PageContent[] = parseResult.pages.map((page) => ({
@@ -187,7 +193,7 @@ export async function processDocument(c: Context) {
     });
 
     console.log(
-      `Created ${textChunks.length} text chunks from ${pageContents.length} pages`,
+      `Created ${textChunks.length} text chunks from ${pageContents.length} pages`
     );
 
     // Generate embeddings for all chunks
@@ -199,18 +205,18 @@ export async function processDocument(c: Context) {
     try {
       // CRITICAL: Use OpenAI embeddings to ensure consistent dimensions
       console.log(
-        "🔄 Generating OpenAI embeddings (text-embedding-3-small, 1536 dimensions)...",
+        "🔄 Generating OpenAI embeddings (text-embedding-3-small, 1536 dimensions)..."
       );
       embeddings = await openaiClient.generateBatchEmbeddings(
         chunkTexts,
-        "text-embedding-3-small",
+        "text-embedding-3-small"
       );
       totalTokens = embeddings.reduce(
         (sum, emb) => sum + emb.usage.total_tokens,
-        0,
+        0
       );
       console.log(
-        `✅ Generated ${embeddings.length} OpenAI embeddings (1536 dimensions)`,
+        `✅ Generated ${embeddings.length} OpenAI embeddings (1536 dimensions)`
       );
     } catch (openaiError) {
       console.error("❌ OpenAI embeddings failed:", openaiError);
@@ -221,14 +227,14 @@ export async function processDocument(c: Context) {
           `Please ensure OpenAI API key is configured correctly. ` +
           `Error: ${
             openaiError instanceof Error ? openaiError.message : "Unknown error"
-          }`,
+          }`
       );
     }
     if (!embeddings) {
       throw new Error("No embeddings generated");
     }
     console.log(
-      `Generated ${embeddings.length} embeddings using ${embeddingModel}`,
+      `Generated ${embeddings.length} embeddings using ${embeddingModel}`
     );
 
     // Prepare chunks for Qdrant storage
@@ -256,6 +262,123 @@ export async function processDocument(c: Context) {
 
     console.log(`Stored ${documentChunks.length} chunks in Qdrant`);
 
+    // Convert PDF pages to images and upload to storage (PDF only)
+    let imagePaths: Record<number, string> | undefined = undefined;
+    if (fileExtension === "pdf") {
+      try {
+        console.log("🖼️ Starting PDF page image conversion...");
+        const parserUrl =
+          Deno.env.get("DOC_PARSER_URL") || "http://localhost:8080";
+        const imagesEndpoint = `${parserUrl}/parse/pdf-images`;
+
+        const imagesResponse = await fetch(imagesEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            filePath: tempFilePath || "", // Use original temp file path
+          }),
+        });
+
+        if (!imagesResponse.ok) {
+          throw new Error(
+            `Image conversion service failed: ${imagesResponse.status} ${imagesResponse.statusText}`
+          );
+        }
+
+        const imagesResult = await imagesResponse.json();
+        const tempImageFiles = imagesResult.imagePaths as string[];
+        const tempDir = imagesResult.meta?.tempDirectory as string | undefined;
+
+        if (tempImageFiles && tempImageFiles.length > 0) {
+          console.log(
+            `📸 Converting ${tempImageFiles.length} pages to images...`
+          );
+          imagePaths = {};
+
+          // Upload each page image to Supabase Storage
+          for (const imagePath of tempImageFiles) {
+            try {
+              // Extract page number from filename (e.g., "page-01.jpg" -> 1)
+              const fileName = imagePath.split("/").pop() || "";
+              const pageMatch = fileName.match(/page-(\d+)\.jpg$/);
+              const pageNumber = pageMatch ? parseInt(pageMatch[1], 10) : null;
+
+              if (pageNumber === null) {
+                console.warn(
+                  `⚠️ Could not extract page number from ${fileName}`
+                );
+                continue;
+              }
+
+              // Read image file
+              const imageData = await Deno.readFile(imagePath);
+
+              // Construct storage path: {userId}/{projectId}/images/{documentId}/page-{pageNumber}.jpg
+              const storagePath = `${user.id}/${project_id}/images/${document_id}/page-${pageNumber}.jpg`;
+
+              // Upload to Supabase Storage
+              const uploadedPath = await supabaseService.uploadFile(
+                imageData,
+                storagePath,
+                "image/jpeg"
+              );
+
+              imagePaths[pageNumber] = uploadedPath;
+              console.log(
+                `✅ Uploaded page ${pageNumber} image to ${uploadedPath}`
+              );
+            } catch (imageError) {
+              console.error(
+                `❌ Failed to upload image ${imagePath}:`,
+                imageError
+              );
+              // Continue with other images even if one fails
+            }
+          }
+
+          // Clean up temp image files and directory
+          if (tempDir) {
+            try {
+              for (const imagePath of tempImageFiles) {
+                try {
+                  await Deno.remove(imagePath);
+                } catch {
+                  // Ignore individual file removal errors
+                }
+              }
+              // Remove temp directory
+              await Deno.remove(tempDir, { recursive: true });
+              console.log(`🧹 Cleaned up temp image directory: ${tempDir}`);
+            } catch (cleanupError) {
+              console.warn(
+                `⚠️ Failed to cleanup temp image directory: ${cleanupError}`
+              );
+            }
+          }
+
+          console.log(
+            `✅ Successfully converted and uploaded ${
+              Object.keys(imagePaths).length
+            } page images`
+          );
+        }
+      } catch (imageConversionError) {
+        // Log error but don't fail entire processing
+        console.error(
+          "❌ PDF image conversion failed (document processing continues):",
+          imageConversionError
+        );
+      }
+    }
+
+    // Clean up temporary file (after image conversion if PDF)
+    if (tempFilePath) {
+      await supabaseService.cleanupTempFile(tempFilePath);
+      tempFilePath = null;
+    }
+
     // Update document metadata and status
     const updatedMetadata = {
       ...(document.metadata || {}),
@@ -271,6 +394,7 @@ export async function processDocument(c: Context) {
     await supabaseService.updateDocument(document_id, {
       status: "ready",
       metadata: updatedMetadata,
+      image_paths: imagePaths,
     });
 
     const processingTime = Date.now() - startTime;
@@ -306,16 +430,18 @@ export async function processDocument(c: Context) {
     }
 
     const processingTime = Date.now() - startTime;
-    const errorMessage = error instanceof Error
-      ? error.message
-      : "Unknown error occurred";
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error occurred";
 
-    return c.json({
-      success: false,
-      document_id: "",
-      chunks_created: 0,
-      processing_time_ms: processingTime,
-      error: errorMessage,
-    } as DocumentProcessResponse, 500);
+    return c.json(
+      {
+        success: false,
+        document_id: "",
+        chunks_created: 0,
+        processing_time_ms: processingTime,
+        error: errorMessage,
+      } as DocumentProcessResponse,
+      500
+    );
   }
 }

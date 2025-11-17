@@ -5,6 +5,7 @@ import type {
   SendMessageResponse,
 } from '../../../shared/types/chat';
 import type { Project, ProjectFile } from '../stores/project';
+import type { FileLibraryItem, ListFilesResponse } from '../../../shared/types/index';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -355,6 +356,58 @@ export const getFileUrl = async (storagePath: string): Promise<string> => {
     console.error('Failed to get file URL:', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to generate download URL');
   }
+};
+
+/**
+ * Get all files from user's projects with filtering and pagination
+ */
+export const searchFiles = async (
+  options: {
+    limit?: number;
+    offset?: number;
+    projectIds?: string[];
+    searchQuery?: string;
+    searchMode?: 'filename' | 'semantic' | 'typesense';
+  } = {}
+): Promise<ListFilesResponse> => {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+
+  if (!token) throw new Error('Not authenticated');
+
+  const {
+    limit = 100,
+    offset = 0,
+    projectIds = [],
+    searchQuery = '',
+    searchMode = 'filename',
+  } = options;
+
+  // Request body for POST method
+  const requestBody = {
+    limit,
+    offset,
+    searchQuery: searchQuery || undefined,
+    searchMode: searchQuery ? searchMode : undefined,
+    projectIds: projectIds.length > 0 ? projectIds : undefined,
+  };
+
+  const response = await fetch(`${API_BASE_URL}/searchFiles`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || errorData.details || 'Failed to fetch files');
+  }
+
+  const data: ListFilesResponse = await response.json();
+  return data;
 };
 
 /**

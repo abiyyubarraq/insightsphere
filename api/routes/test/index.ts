@@ -108,8 +108,8 @@ let testConfig = {
   storage_path:
     "e4ad1e3d-20b6-4802-a4f2-43b49d0c594b/7fe82471-199f-4d7d-8785-5b81973ef588/1757857217378_AI hallucination towards a comprehensive.pdf",
   user_id: "e4ad1e3d-20b6-4802-a4f2-43b49d0c594b", // Add user_id to config
-  legacy_jwt_secret: Deno.env.get("LEGACY_JWT_SECRET") ||
-    "YOUR_LEGACY_JWT_SECRET_HERE",
+  legacy_jwt_secret:
+    Deno.env.get("LEGACY_JWT_SECRET") || "YOUR_LEGACY_JWT_SECRET_HERE",
   auth_mode: "admin", // "admin" or "user"
   last_updated: new Date().toISOString(),
 };
@@ -143,10 +143,13 @@ export async function updateTestConfig(c: Context) {
       config: testConfig,
     });
   } catch (_error) {
-    return c.json({
-      success: false,
-      error: "Invalid JSON body",
-    }, 400);
+    return c.json(
+      {
+        success: false,
+        error: "Invalid JSON body",
+      },
+      400
+    );
   }
 }
 
@@ -181,26 +184,34 @@ export function configForm(c: Context) {
 
 			<form id="config-form">
 				<label for="project_id">Project ID:</label>
-				<input type="text" id="project_id" name="project_id" value="${testConfig.project_id}" required>
+				<input type="text" id="project_id" name="project_id" value="${
+          testConfig.project_id
+        }" required>
 				
 				<label for="document_id">Document ID:</label>
-				<input type="text" id="document_id" name="document_id" value="${testConfig.document_id}" required>
+				<input type="text" id="document_id" name="document_id" value="${
+          testConfig.document_id
+        }" required>
 				
 				<label for="storage_path">Storage Path:</label>
-				<input type="text" id="storage_path" name="storage_path" value="${testConfig.storage_path}" required>
+				<input type="text" id="storage_path" name="storage_path" value="${
+          testConfig.storage_path
+        }" required>
 				
 				<label for="auth_mode">Authentication Mode:</label>
 				<select id="auth_mode" name="auth_mode" required>
 					<option value="admin" ${
-    testConfig.auth_mode === "admin" ? "selected" : ""
-  }>Admin (Legacy JWT)</option>
+            testConfig.auth_mode === "admin" ? "selected" : ""
+          }>Admin (Legacy JWT)</option>
 					<option value="user" ${
-    testConfig.auth_mode === "user" ? "selected" : ""
-  }>User (Supabase JWT)</option>
+            testConfig.auth_mode === "user" ? "selected" : ""
+          }>User (Supabase JWT)</option>
 				</select>
 				
 				<label for="legacy_jwt_secret">Legacy JWT Secret:</label>
-				<textarea id="legacy_jwt_secret" name="legacy_jwt_secret" rows="3" required>${testConfig.legacy_jwt_secret}</textarea>
+				<textarea id="legacy_jwt_secret" name="legacy_jwt_secret" rows="3" required>${
+          testConfig.legacy_jwt_secret
+        }</textarea>
 				<small>Admin mode: Use LEGACY_JWT_SECRET. User mode: Use Supabase JWT token.</small>
 				
 				<button type="submit">Update Configuration</button>
@@ -263,7 +274,7 @@ export async function testQdrant(c: Context) {
     const testConfig = getConfig();
     const info = await qdrantService.getCollectionInfo(
       testConfig.user_id,
-      testConfig.project_id,
+      testConfig.project_id
     );
     return c.json({
       success: true,
@@ -274,13 +285,16 @@ export async function testQdrant(c: Context) {
       qdrant_url: Deno.env.get("QDRANT_URL") || "http://localhost:6333",
     });
   } catch (error) {
-    return c.json({
-      success: false,
-      service: "Qdrant",
-      status: "error",
-      error: error instanceof Error ? error.message : "Unknown error",
-      qdrant_url: Deno.env.get("QDRANT_URL") || "http://localhost:6333",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        service: "Qdrant",
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
+        qdrant_url: Deno.env.get("QDRANT_URL") || "http://localhost:6333",
+      },
+      500
+    );
   }
 }
 
@@ -302,13 +316,16 @@ export async function testOpenAI(c: Context) {
       api_key_configured: !!Deno.env.get("OPENAI_API_KEY"),
     });
   } catch (error) {
-    return c.json({
-      success: false,
-      service: "OpenAI",
-      status: "error",
-      error: error instanceof Error ? error.message : "Unknown error",
-      api_key_configured: !!Deno.env.get("OPENAI_API_KEY"),
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        service: "OpenAI",
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
+        api_key_configured: !!Deno.env.get("OPENAI_API_KEY"),
+      },
+      500
+    );
   }
 }
 
@@ -316,11 +333,14 @@ export async function testOpenAI(c: Context) {
 export async function testDocumentProcess(c: Context) {
   try {
     if (testConfig.legacy_jwt_secret === "YOUR_LEGACY_JWT_SECRET_HERE") {
-      return c.json({
-        success: false,
-        error:
-          "Test configuration not set. Please update via /v1/test/config/form",
-      }, 400);
+      return c.json(
+        {
+          success: false,
+          error:
+            "Test configuration not set. Please update via /v1/test/config/form",
+        },
+        400
+      );
     }
 
     console.log("🧪 Test: Starting real document processing...");
@@ -388,17 +408,20 @@ export async function testDocumentProcess(c: Context) {
     });
   } catch (error) {
     console.error("❌ Document processing test failed:", error);
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-      test_mode: true,
-      config_used: {
-        project_id: testConfig.project_id,
-        document_id: testConfig.document_id,
-        storage_path: testConfig.storage_path,
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        test_mode: true,
+        config_used: {
+          project_id: testConfig.project_id,
+          document_id: testConfig.document_id,
+          storage_path: testConfig.storage_path,
+        },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
-    }, 500);
+      500
+    );
   }
 }
 
@@ -406,11 +429,14 @@ export async function testDocumentProcess(c: Context) {
 export async function testDocumentProcessHttp(c: Context) {
   try {
     if (testConfig.legacy_jwt_secret === "YOUR_LEGACY_JWT_SECRET_HERE") {
-      return c.json({
-        success: false,
-        error:
-          "Test configuration not set. Please update via /v1/test/config/form",
-      }, 400);
+      return c.json(
+        {
+          success: false,
+          error:
+            "Test configuration not set. Please update via /v1/test/config/form",
+        },
+        400
+      );
     }
 
     console.log("🧪 Test: Starting HTTP POST document processing...");
@@ -434,7 +460,7 @@ export async function testDocumentProcessHttp(c: Context) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${testConfig.legacy_jwt_secret}`,
+        Authorization: `Bearer ${testConfig.legacy_jwt_secret}`,
       },
       body: JSON.stringify(processRequest),
     });
@@ -445,15 +471,18 @@ export async function testDocumentProcessHttp(c: Context) {
     console.log("📄 Response data:", responseData);
 
     if (!response.ok) {
-      return c.json({
-        success: false,
-        error: `HTTP ${response.status}: ${response.statusText}`,
-        response_data: responseData,
-        test_mode: "http_post",
-        config_used: processRequest,
-        endpoint_used: endpoint,
-        timestamp: new Date().toISOString(),
-      }, 500);
+      return c.json(
+        {
+          success: false,
+          error: `HTTP ${response.status}: ${response.statusText}`,
+          response_data: responseData,
+          test_mode: "http_post",
+          config_used: processRequest,
+          endpoint_used: endpoint,
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
     }
 
     return c.json({
@@ -468,17 +497,20 @@ export async function testDocumentProcessHttp(c: Context) {
     });
   } catch (error) {
     console.error("❌ HTTP document processing test failed:", error);
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-      test_mode: "http_post",
-      config_used: {
-        project_id: testConfig.project_id,
-        document_id: testConfig.document_id,
-        storage_path: testConfig.storage_path,
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        test_mode: "http_post",
+        config_used: {
+          project_id: testConfig.project_id,
+          document_id: testConfig.document_id,
+          storage_path: testConfig.storage_path,
+        },
+        timestamp: new Date().toISOString(),
       },
-      timestamp: new Date().toISOString(),
-    }, 500);
+      500
+    );
   }
 }
 
@@ -496,10 +528,13 @@ export function testListDocuments(c: Context) {
       },
     });
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
   }
 }
 
@@ -509,10 +544,9 @@ export async function testVectorStats(c: Context) {
     const testConfig = getConfig();
     const info = await qdrantService.getCollectionInfo(
       testConfig.user_id,
-      testConfig.project_id,
+      testConfig.project_id
     );
-    const collectionName =
-      `insightsphere_user_${testConfig.user_id}_project_${testConfig.project_id}`;
+    const collectionName = `insightsphere_user_${testConfig.user_id}_project_${testConfig.project_id}`;
     return c.json({
       success: true,
       service: "Vector Storage",
@@ -521,11 +555,14 @@ export async function testVectorStats(c: Context) {
       last_config_update: testConfig.last_updated,
     });
   } catch (error) {
-    return c.json({
-      success: false,
-      service: "Vector Storage",
-      error: error instanceof Error ? error.message : "Unknown error",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        service: "Vector Storage",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
   }
 }
 
@@ -534,10 +571,13 @@ export async function testVectorSearch(c: Context) {
     const query = c.req.query("query") || "test search";
 
     if (!query) {
-      return c.json({
-        success: false,
-        error: "Query parameter required. Use ?query=your search term",
-      }, 400);
+      return c.json(
+        {
+          success: false,
+          error: "Query parameter required. Use ?query=your search term",
+        },
+        400
+      );
     }
 
     // Generate embedding for the query
@@ -551,13 +591,14 @@ export async function testVectorSearch(c: Context) {
       queryEmbedding.embedding,
       {
         userId: testConfig.user_id,
-        projectId: testConfig.project_id !== "YOUR_PROJECT_ID"
-          ? testConfig.project_id
-          : undefined,
+        projectId:
+          testConfig.project_id !== "YOUR_PROJECT_ID"
+            ? testConfig.project_id
+            : undefined,
         useProjectCollection: true, // Use per-project collection
         limit: 5,
         threshold: 0.3,
-      },
+      }
     );
 
     return c.json({
@@ -568,16 +609,20 @@ export async function testVectorSearch(c: Context) {
       results_found: searchResults.length,
       results: searchResults,
       filter_used: {
-        projectId: testConfig.project_id !== "YOUR_PROJECT_ID"
-          ? testConfig.project_id
-          : "none",
+        projectId:
+          testConfig.project_id !== "YOUR_PROJECT_ID"
+            ? testConfig.project_id
+            : "none",
       },
     });
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      500
+    );
   }
 }
 
@@ -589,10 +634,13 @@ export async function testProjectSearch(c: Context) {
   try {
     const query = c.req.query("query");
     if (!query) {
-      return c.json({
-        success: false,
-        error: "Query parameter required. Use ?query=your search term",
-      }, 400);
+      return c.json(
+        {
+          success: false,
+          error: "Query parameter required. Use ?query=your search term",
+        },
+        400
+      );
     }
 
     const testConfig = getConfig();
@@ -612,7 +660,7 @@ export async function testProjectSearch(c: Context) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${testConfig.legacy_jwt_secret}`,
+        Authorization: `Bearer ${testConfig.legacy_jwt_secret}`,
         "X-Admin-User-Id": testConfig.user_id, // For admin mode
       },
       body: JSON.stringify(searchPayload),
@@ -664,54 +712,70 @@ export async function testProjectSearch(c: Context) {
                 <strong>Search Metadata:</strong><br>
                 <strong>Project ID:</strong> ${result.project_id}<br>
                 <strong>Results Found:</strong> ${result.results.length}<br>
-                <strong>Embedding Model:</strong> ${result.metadata.embedding_model}<br>
-                <strong>Processing Time:</strong> ${result.metadata.processing_time_ms}ms<br>
-                <strong>Collection Strategy:</strong> ${result.metadata.collection_strategy}<br>
-                <strong>Threshold Used:</strong> ${result.metadata.threshold_used}
+                <strong>Embedding Model:</strong> ${
+                  result.metadata.embedding_model
+                }<br>
+                <strong>Processing Time:</strong> ${
+                  result.metadata.processing_time_ms
+                }ms<br>
+                <strong>Collection Strategy:</strong> ${
+                  result.metadata.collection_strategy
+                }<br>
+                <strong>Threshold Used:</strong> ${
+                  result.metadata.threshold_used
+                }
             </div>
 
             <div class="collection-info">
-                <strong>🗂️ Collection Used:</strong> insightsphere_user_${testConfig.user_id}_project_${result.project_id}
+                <strong>🗂️ Collection Used:</strong> insightsphere_user_${
+                  testConfig.user_id
+                }_project_${result.project_id}
                 <br><em>This ensures only documents from this specific project are searched!</em>
             </div>
 
             <div class="results">
                 ${
-      result.results.length > 0
-        ? result.results.map((
-          item: {
-            score: number;
-            metadata: {
-              fileName: string;
-              pageNumber?: number;
-              chunkIndex: number;
-              documentId: string;
-            };
-            content: string;
-          },
-          index: number,
-        ) => `
+                  result.results.length > 0
+                    ? result.results
+                        .map(
+                          (
+                            item: {
+                              score: number;
+                              metadata: {
+                                fileName: string;
+                                pageNumber?: number;
+                                chunkIndex: number;
+                                documentId: string;
+                              };
+                              content: string;
+                            },
+                            index: number
+                          ) => `
                         <div class="result">
-                            <div class="score">Score: ${
-          (item.score * 100).toFixed(1)
-        }%</div>
-                            <strong>Result ${
-          index + 1
-        }:</strong> ${item.metadata.fileName}
+                            <div class="score">Score: ${(
+                              item.score * 100
+                            ).toFixed(1)}%</div>
+                            <strong>Result ${index + 1}:</strong> ${
+                            item.metadata.fileName
+                          }
                             <div class="page-info">
                                 📄 Page ${item.metadata.pageNumber || "N/A"} • 
                                 Chunk ${item.metadata.chunkIndex} • 
-                                Document: ${
-          item.metadata.documentId.substring(0, 8)
-        }...
+                                Document: ${item.metadata.documentId.substring(
+                                  0,
+                                  8
+                                )}...
                             </div>
-                            <div class="content">${
-          item.content.substring(0, 300)
-        }${item.content.length > 300 ? "..." : ""}</div>
+                            <div class="content">${item.content.substring(
+                              0,
+                              300
+                            )}${item.content.length > 300 ? "..." : ""}</div>
                         </div>
-                    `).join("")
-        : '<div class="no-results">No relevant results found. Try a different query or check if documents are processed.</div>'
-    }
+                    `
+                        )
+                        .join("")
+                    : '<div class="no-results">No relevant results found. Try a different query or check if documents are processed.</div>'
+                }
             </div>
         </div>
 
@@ -729,11 +793,14 @@ export async function testProjectSearch(c: Context) {
 
     return c.html(html);
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-      details: "Make sure documents are processed and Qdrant is running",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        details: "Make sure documents are processed and Qdrant is running",
+      },
+      500
+    );
   }
 }
 
@@ -759,12 +826,11 @@ export async function testDebugSearch(c: Context) {
 
     console.log(
       "📋 Found user collections:",
-      userCollections.map((c: any) => c.name),
+      userCollections.map((c: any) => c.name)
     );
 
     // 2. Check collection info for the project collection
-    const projectCollectionName =
-      `insightsphere-documents_user_${testConfig.user_id}_project_${testConfig.project_id}`;
+    const projectCollectionName = `insightsphere-documents_user_${testConfig.user_id}_project_${testConfig.project_id}`;
     console.log(`🔍 Checking collection: ${projectCollectionName}`);
 
     let collectionInfo;
@@ -772,7 +838,7 @@ export async function testDebugSearch(c: Context) {
       // Try to get collection info using the existing method
       collectionInfo = await qdrantService.getCollectionInfo(
         testConfig.user_id,
-        testConfig.project_id,
+        testConfig.project_id
       );
       console.log("✅ Collection found:", {
         name: projectCollectionName,
@@ -802,7 +868,7 @@ export async function testDebugSearch(c: Context) {
         {
           limit: 5,
           // No score_threshold to get all results
-        },
+        }
       );
       searchResults = directSearch as any[];
       console.log(`📊 Direct search returned ${searchResults.length} results`);
@@ -822,7 +888,7 @@ export async function testDebugSearch(c: Context) {
           {
             limit: 5,
             score_threshold: threshold,
-          },
+          }
         );
         const resultsArray = results as any[];
         thresholdResults.push({
@@ -863,17 +929,21 @@ export async function testDebugSearch(c: Context) {
       ],
     });
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-      diagnostic_failed: true,
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        diagnostic_failed: true,
+      },
+      500
+    );
   }
 }
 
 export async function testRAGQuery(c: Context) {
   try {
-    const query = c.req.query("query") ||
+    const query =
+      c.req.query("query") ||
       "What are the main topics covered in these documents?";
     const testConfig = getConfig();
 
@@ -884,7 +954,7 @@ export async function testRAGQuery(c: Context) {
     const testResult = await ragService.testRAGPipeline(
       testConfig.project_id,
       testConfig.user_id,
-      query,
+      query
     );
 
     // Enhanced HTML response for browser testing
@@ -923,70 +993,91 @@ export async function testRAGQuery(c: Context) {
             <div class="query">Query: "${query}"</div>
             
             ${
-      testResult.success
-        ? `
+              testResult.success
+                ? `
                 <div class="answer">
                     <h3>🎯 AI Answer:</h3>
                     <p>${testResult.result?.answer || "No answer generated"}</p>
                 </div>
 
                 ${
-          testResult.result?.citations && testResult.result.citations.length > 0
-            ? `
-                    <h3>📚 Citations (${testResult.result.citations.length}):</h3>
-                    ${
-              testResult.result.citations.map((citation, index) => `
+                  testResult.result?.citations &&
+                  testResult.result.citations.length > 0
+                    ? `
+                    <h3>📚 Citations (${
+                      testResult.result.citations.length
+                    }):</h3>
+                    ${testResult.result.citations
+                      .map(
+                        (citation, index) => `
                         <div class="citation">
-                            <div class="score">Score: ${
-                (citation.similarity_score * 100).toFixed(1)
-              }%</div>
-                            <strong>Source ${
-                index + 1
-              }:</strong> ${citation.file_name}
+                            <div class="score">Score: ${(
+                              citation.similarity_score * 100
+                            ).toFixed(1)}%</div>
+                            <strong>Source ${index + 1}:</strong> ${
+                          citation.file_name
+                        }
                             <br><strong>Page:</strong> ${
-                citation.page_number || "N/A"
-              } • <strong>Chunk:</strong> ${citation.chunk_index}
+                              citation.page_number || "N/A"
+                            } • <strong>Chunk:</strong> ${citation.chunk_index}
                             <br><strong>Text:</strong> ${citation.text_snippet}
                         </div>
-                    `).join("")
-            }
+                    `
+                      )
+                      .join("")}
                 `
-            : '<div class="no-results">No citations found</div>'
-        }
+                    : '<div class="no-results">No citations found</div>'
+                }
 
                 <div class="metadata">
                     <h4>📊 Processing Metadata:</h4>
-                    <strong>Project ID:</strong> ${testResult.result?.metadata.project_id}<br>
-                    <strong>Chunks Retrieved:</strong> ${testResult.result?.metadata.chunks_retrieved}<br>
-                    <strong>Chunks Used:</strong> ${testResult.result?.metadata.chunks_used}<br>
-                    <strong>Avg Similarity:</strong> ${
-          ((testResult.result?.metadata.avg_similarity || 0) * 100).toFixed(1)
-        }%<br>
-                    <strong>Embedding Model:</strong> ${testResult.result?.metadata.embedding_model}<br>
-                    <strong>LLM Model:</strong> ${testResult.result?.metadata.llm_model}<br>
-                    <strong>Processing Time:</strong> ${testResult.result?.metadata.processing_time_ms}ms<br>
-                    <strong>Context Length:</strong> ${testResult.result?.metadata.context_length} chars
+                    <strong>Project ID:</strong> ${
+                      testResult.result?.metadata.project_id
+                    }<br>
+                    <strong>Chunks Retrieved:</strong> ${
+                      testResult.result?.metadata.chunks_retrieved
+                    }<br>
+                    <strong>Chunks Used:</strong> ${
+                      testResult.result?.metadata.chunks_used
+                    }<br>
+                    <strong>Avg Similarity:</strong> ${(
+                      (testResult.result?.metadata.avg_similarity || 0) * 100
+                    ).toFixed(1)}%<br>
+                    <strong>Embedding Model:</strong> ${
+                      testResult.result?.metadata.embedding_model
+                    }<br>
+                    <strong>LLM Model:</strong> ${
+                      testResult.result?.metadata.llm_model
+                    }<br>
+                    <strong>Processing Time:</strong> ${
+                      testResult.result?.metadata.processing_time_ms
+                    }ms<br>
+                    <strong>Context Length:</strong> ${
+                      testResult.result?.metadata.context_length
+                    } chars
                 </div>
             `
-        : `
+                : `
                 <div class="no-results">
                     <h3>❌ RAG Test Failed</h3>
                     <p><strong>Error:</strong> ${testResult.error}</p>
                 </div>
             `
-    }
+            }
 
             <h3>🔍 Pipeline Steps:</h3>
-            ${
-      testResult.steps.map((step) => `
+            ${testResult.steps
+              .map(
+                (step) => `
                 <div class="step ${step.status}">
-                    <strong>${
-        step.step.replace("_", " ").toUpperCase()
-      }:</strong> ${step.message}
+                    <strong>${step.step
+                      .replace("_", " ")
+                      .toUpperCase()}:</strong> ${step.message}
                     ${step.duration_ms ? ` (${step.duration_ms}ms)` : ""}
                 </div>
-            `).join("")
-    }
+            `
+              )
+              .join("")}
         </div>
 
         <div class="card">
@@ -1002,8 +1093,12 @@ export async function testRAGQuery(c: Context) {
             <h3>📡 API Usage:</h3>
             <p>Test the actual API endpoint:</p>
             <code>
-                curl -X POST http://localhost:8000/v1/projects/${testConfig.project_id}/query \\<br>
-                &nbsp;&nbsp;-H "Authorization: Bearer ${testConfig.legacy_jwt_secret}" \\<br>
+                curl -X POST http://localhost:8000/v1/projects/${
+                  testConfig.project_id
+                }/query \\<br>
+                &nbsp;&nbsp;-H "Authorization: Bearer ${
+                  testConfig.legacy_jwt_secret
+                }" \\<br>
                 &nbsp;&nbsp;-H "X-Admin-User-Id: ${testConfig.user_id}" \\<br>
                 &nbsp;&nbsp;-H "Content-Type: application/json" \\<br>
                 &nbsp;&nbsp;-d '{"query": "${query}"}'
@@ -1015,11 +1110,231 @@ export async function testRAGQuery(c: Context) {
 
     return c.html(html);
   } catch (error) {
-    return c.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-      details:
-        "Make sure documents are processed, Qdrant is running, and LLM API key is configured",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        details:
+          "Make sure documents are processed, Qdrant is running, and LLM API key is configured",
+      },
+      500
+    );
+  }
+}
+
+/**
+ * Test PDF page image conversion
+ * GET /v1/test/convert-to-image
+ */
+export async function testConvertImage(c: Context) {
+  try {
+    const testConfig = getConfig();
+
+    if (!testConfig.document_id) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "Test configuration not set. Please update via /v1/test/config/form",
+        },
+        400
+      );
+    }
+
+    console.log("🧪 Test: Starting PDF page image conversion...");
+    console.log("📋 Config:", {
+      document_id: testConfig.document_id,
+      project_id: testConfig.project_id,
+      user_id: testConfig.user_id,
+    });
+
+    // Get document from Supabase
+    const { supabaseService } = await import("../../lib/supabaseClient.ts");
+    let document;
+    try {
+      if (testConfig.auth_mode === "admin") {
+        document = await supabaseService.getDocumentAsAdmin(
+          testConfig.document_id
+        );
+      } else {
+        document = await supabaseService.getDocument(
+          testConfig.document_id,
+          testConfig.user_id
+        );
+      }
+    } catch (docError) {
+      return c.json(
+        {
+          success: false,
+          error: `Failed to fetch document: ${
+            docError instanceof Error ? docError.message : "Unknown error"
+          }`,
+          document_id: testConfig.document_id,
+        },
+        404
+      );
+    }
+
+    // Check if it's a PDF
+    const fileExtension = document.file_name.toLowerCase().split(".").pop();
+    if (fileExtension !== "pdf") {
+      return c.json(
+        {
+          success: false,
+          error:
+            "Document is not a PDF. Image conversion only works for PDF files.",
+          document_id: testConfig.document_id,
+          file_type: fileExtension,
+        },
+        400
+      );
+    }
+
+    // Download PDF from storage
+    console.log(`📥 Downloading PDF from storage: ${document.storage_path}`);
+    const fileData = await supabaseService.downloadFile(document.storage_path);
+
+    // Create temporary file
+    const tempFilePath = await supabaseService.createTempFile(
+      fileData.data,
+      fileData.fileName || "test_file.pdf"
+    );
+    console.log(`📁 Created temp file: ${tempFilePath}`);
+
+    try {
+      // Call Go parser to convert PDF pages to images
+      const parserUrl =
+        Deno.env.get("DOC_PARSER_URL") || "http://localhost:8080";
+      const imagesEndpoint = `${parserUrl}/parse/pdf-images`;
+
+      console.log(`🔄 Calling image conversion service: ${imagesEndpoint}`);
+      const imagesResponse = await fetch(imagesEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filePath: tempFilePath,
+        }),
+      });
+
+      if (!imagesResponse.ok) {
+        const errorText = await imagesResponse.text();
+        throw new Error(
+          `Image conversion service failed: ${imagesResponse.status} ${imagesResponse.statusText} - ${errorText}`
+        );
+      }
+
+      const imagesResult = await imagesResponse.json();
+      const tempImageFiles = imagesResult.imagePaths as string[];
+      const tempDir = imagesResult.meta?.tempDirectory as string | undefined;
+
+      if (!tempImageFiles || tempImageFiles.length === 0) {
+        return c.json(
+          {
+            success: false,
+            error: "No images were generated from PDF",
+            document_id: testConfig.document_id,
+          },
+          500
+        );
+      }
+
+      console.log(`📸 Generated ${tempImageFiles.length} page images`);
+
+      // Upload images to Supabase Storage
+      const imagePaths: Record<number, string> = {};
+
+      for (const imagePath of tempImageFiles) {
+        try {
+          // Extract page number from filename
+          const fileName = imagePath.split("/").pop() || "";
+          const pageMatch = fileName.match(/page-(\d+)\.jpg$/);
+          const pageNumber = pageMatch ? parseInt(pageMatch[1], 10) : null;
+
+          if (pageNumber === null) {
+            console.warn(`⚠️ Could not extract page number from ${fileName}`);
+            continue;
+          }
+
+          // Read image file
+          const imageData = await Deno.readFile(imagePath);
+
+          // Construct storage path
+          const storagePath = `${testConfig.user_id}/${testConfig.project_id}/images/${testConfig.document_id}/page-${pageNumber}.jpg`;
+
+          // Upload to Supabase Storage
+          const uploadedPath = await supabaseService.uploadFile(
+            imageData,
+            storagePath,
+            "image/jpeg"
+          );
+
+          imagePaths[pageNumber] = uploadedPath;
+          console.log(`✅ Uploaded page ${pageNumber} to ${uploadedPath}`);
+        } catch (imageError) {
+          console.error(`❌ Failed to upload image ${imagePath}:`, imageError);
+        }
+      }
+
+      // Update document with image_paths
+      await supabaseService.updateDocument(testConfig.document_id, {
+        image_paths: imagePaths,
+      });
+
+      // Clean up temp files
+      try {
+        for (const imagePath of tempImageFiles) {
+          try {
+            await Deno.remove(imagePath);
+          } catch {
+            // Ignore individual file removal errors
+          }
+        }
+        if (tempDir) {
+          await Deno.remove(tempDir, { recursive: true });
+        }
+        await supabaseService.cleanupTempFile(tempFilePath);
+        console.log("🧹 Cleaned up temp files");
+      } catch (cleanupError) {
+        console.warn("⚠️ Failed to cleanup temp files:", cleanupError);
+      }
+
+      return c.json({
+        success: true,
+        message: "PDF page image conversion completed successfully",
+        document_id: testConfig.document_id,
+        image_paths: imagePaths,
+        pages_processed: Object.keys(imagePaths).length,
+        total_pages: tempImageFiles.length,
+        metadata: {
+          file_name: document.file_name,
+          storage_path: document.storage_path,
+          conversion_format: "jpeg",
+          resolution: "150 DPI",
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      // Clean up temp file on error
+      try {
+        await supabaseService.cleanupTempFile(tempFilePath);
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    console.error("❌ PDF image conversion test failed:", error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+        test_mode: true,
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
   }
 }

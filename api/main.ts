@@ -10,6 +10,7 @@ import {
   configForm,
   getTestConfig,
   testApiHealth,
+  testConvertImage,
   testDashboard,
   testDebugSearch,
   testDocumentProcess,
@@ -24,6 +25,7 @@ import {
   updateTestConfig,
 } from "./routes/test/index.ts";
 import { generateSummary } from "./routes/documents/generateSummary.ts";
+import { searchFiles } from "./routes/searchFiles/search.ts";
 
 const app = new Hono();
 
@@ -98,6 +100,9 @@ api.get("/projects/:projectId/query/suggestions", getQuerySuggestions);
 // Chat endpoints (Conversational RAG)
 api.post("/projects/:projectId/chat", sendChatMessage);
 
+// File Library endpoint (POST only)
+api.post("/searchFiles", searchFiles);
+
 // Test endpoints for browser-based testing
 api.get("/test/dashboard", testDashboard);
 api.get("/test/config", getTestConfig);
@@ -114,6 +119,7 @@ api.get("/test/search", testVectorSearch);
 api.get("/test/search-project", testProjectSearch);
 api.get("/test/rag-query", testRAGQuery);
 api.get("/test/debug-search", testDebugSearch);
+api.get("/test/convert-to-image", testConvertImage);
 
 // Document analysis endpoint
 api.post("/documents/analyze", async (c) => {
