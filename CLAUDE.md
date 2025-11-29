@@ -14,7 +14,7 @@ InsightSphere is a document intelligence platform that enables users to upload d
 **Milestone 1 Complete** ✅
 - OCR-based PDF/DOCX processing pipeline
 - Per-project vector storage in Qdrant
-- Multi-provider embedding generation
+- OpenAI embedding generation (text-embedding-3-small)
 - RAG-powered search and chat
 - Browser-based testing dashboard
 
