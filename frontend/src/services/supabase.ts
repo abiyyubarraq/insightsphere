@@ -5,7 +5,7 @@ import type {
   SendMessageResponse,
 } from '../../../shared/types/chat';
 import type { Project, ProjectFile } from '../stores/project';
-import type { FileLibraryItem, ListFilesResponse } from '../../../shared/types/index';
+import type { ListFilesResponse } from '../../../shared/types/index';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
