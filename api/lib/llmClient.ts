@@ -18,7 +18,7 @@ export interface LLMClient {
   generateAnswer(
     context: string,
     query: string,
-    conversationHistory?: string,
+    conversationHistory?: string
   ): Promise<LLMResponse>;
 }
 
@@ -336,7 +336,7 @@ export class OpenAILLMClient implements LLMClient {
   async generateAnswer(
     context: string,
     query: string,
-    conversationHistory?: string,
+    conversationHistory?: string
   ): Promise<LLMResponse> {
     try {
       console.log(`🤖 Calling OpenAI LLM: ${this.model}`);
@@ -345,7 +345,7 @@ export class OpenAILLMClient implements LLMClient {
       const userMessageParts: string[] = [];
 
       // Add conversation history if provided
-      if (conversationHistory && conversationHistory.trim()) {
+      if (conversationHistory?.trim()) {
         userMessageParts.push(conversationHistory);
       }
 
@@ -363,7 +363,7 @@ export class OpenAILLMClient implements LLMClient {
         conversationHistory
           ? "Consider the previous conversation when answering, but base your response on the provided document context."
           : "",
-        "If information is missing or unclear, acknowledge this explicitly.",
+        "If information is missing or unclear, acknowledge this explicitly."
       );
 
       const request: ChatCompletionRequest = {
@@ -428,7 +428,7 @@ export class OpenAILLMClient implements LLMClient {
       throw new Error(
         `Failed to generate OpenAI response: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`,
+        }`
       );
     }
   }
@@ -452,7 +452,7 @@ export class LLMClientFactory {
     // }
     else {
       throw new Error(
-        "No LLM API key found. Set HUGGINGFACE_API_KEY or OPENAI_API_KEY",
+        "No LLM API key found. Set HUGGINGFACE_API_KEY or OPENAI_API_KEY"
       );
     }
   }

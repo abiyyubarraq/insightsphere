@@ -4,7 +4,7 @@
  */
 
 import { InferenceClient } from "@huggingface/inference";
-import { EMBEDDING_MODELS } from "./costants.ts";
+import { EMBEDDING_MODELS } from "./constants.ts";
 
 export interface EmbeddingResponse {
   embedding: number[];
