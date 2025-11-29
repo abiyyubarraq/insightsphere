@@ -1,6 +1,6 @@
 # Document Parser Service
 
-Go 1.22 microservice for parsing PDF and DOCX documents using UniPDF and gooxml
+Go 1.24 microservice for parsing PDF and DOCX documents using UniPDF and gooxml
 
 ## Development
 

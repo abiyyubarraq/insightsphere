@@ -12,7 +12,7 @@ Make sure you have the following installed:
 
 Optional (for manual service startup):
 - **Deno** (v2.4+) for API service
-- **Go** (v1.22+) for document parser
+- **Go** (v1.24+) for document parser
 - **curl** for testing endpoints
 
 ## 🔧 Environment Setup

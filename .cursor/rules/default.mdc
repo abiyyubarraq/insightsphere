@@ -103,3 +103,319 @@ The application allows users to create multiple projects, upload documents, and 
 - Do **NOT** suggest Python or Node.js solutions — Deno & Go only
 - Do **NOT** change the technology stack without explicit request
 - Prevent document uploads >100MB early in processing (both frontend and backend)
+
+---
+## 🤖 RAG Development Rules
+
+### Embedding Consistency (CRITICAL ⚠️)
+- **ALWAYS use the same embedding model for documents and queries**
+- Current standard: OpenAI text-embedding-3-small (1536 dimensions)
+- Document processing uses OpenAI (NO fallback to different models)
+- Query processing MUST also use OpenAI (dimension mismatch = zero results)
+- Different models have different dimensions and are incompatible
+
+```typescript
+// ✅ Correct - consistent model
+const docEmbedding = await openaiClient.generateEmbedding({
+  text: documentChunk,
+  model: "text-embedding-3-small"
+});
+
+const queryEmbedding = await openaiClient.generateEmbedding({
+  text: userQuery,
+  model: "text-embedding-3-small"  // MUST match
+});
+
+// ❌ Wrong - dimension mismatch
+const docEmbedding = await openaiClient.generateEmbedding(text);  // 1536 dims
+const queryEmbedding = await embeddingClient.generateHuggingFaceEmbedding(query);  // 4096 dims
+// Result: Zero search results
+```
+
+### Text Chunking Best Practices
+- **Standard configuration**: 800 tokens per chunk, 100 token overlap
+- **Preserve sentence boundaries**: Split on periods to maintain semantic coherence
+- **Include page metadata**: Track page numbers for citations
+- **Maintain source attribution**: Required for RAG citation accuracy
+
+```typescript
+const textChunks = chunkPages(pageContents, {
+  maxChunkSize: 800,         // Balances context vs. precision
+  overlap: 100,              // Prevents info loss at boundaries
+  preserveSentences: true    // Maintains semantic coherence
+});
+```
+
+### Qdrant Collection Strategy
+- **Per-project isolation**: `insightsphere_user_{userId}_project_{projectId}`
+- **Lazy creation**: Create collection on first document upload
+- **Vector config**: size=1536 (OpenAI), distance=Cosine
+- **Rich metadata**: documentId, projectId, userId, fileName, pageNumber, chunkIndex, createdAt
+
+```typescript
+// ✅ Correct - per-project collection with metadata
+await qdrantService.upsertChunks(documentChunks, {
+  useProjectCollection: true  // Required
+});
+
+// ❌ Wrong - missing project isolation
+await qdrantService.upsertChunks(documentChunks);
+```
+
+### RAG Query Optimization
+- **Use filters for security**: ALWAYS filter by projectId + userId
+- **Similarity threshold**: 0.7 minimum for relevance
+- **Limit results**: 10 chunks max for context (fits in 4K token window)
+- **Build context with citations**: Include source metadata for transparency
+
+```typescript
+const results = await qdrantService.searchSimilar(queryVector, {
+  userId: user.id,              // Required for collection selection
+  projectId: project.id,        // Required for filtering
+  useProjectCollection: true,   // Required
+  threshold: 0.7,               // Minimum relevance
+  limit: 10                     // Max chunks
+});
+```
+
+---
+## 🔄 Multi-Service Coordination
+
+### Service Communication Patterns
+- **Frontend → API**: HTTP/REST with JWT (Bearer token)
+- **API → doc-parser**: HTTP POST with file path
+- **API → Qdrant**: gRPC client (qdrant-js)
+- **API → Supabase**: Service key (backend), Anon key (frontend)
+
+```typescript
+// ✅ Correct - proper authentication
+const response = await fetch(`${API_URL}/endpoint`, {
+  headers: {
+    'Authorization': `Bearer ${jwt}`,
+    'Content-Type': 'application/json'
+  }
+});
+
+// ✅ Backend Supabase access (service key)
+const data = await supabaseService.downloadFile(path);
+
+// ✅ Frontend Supabase access (anon key)
+const { data } = await supabase.storage.from('bucket').list();
+```
+
+### Error Handling Across Services
+- **Retry with exponential backoff**: 3 attempts max for transient failures
+- **Graceful degradation**: Fallback to alternatives when possible
+- **Detailed error messages**: Include service context and trace IDs
+- **Log cross-service requests**: Use trace IDs for debugging
+
+```typescript
+// ✅ Retry with exponential backoff
+let attempts = 0;
+const maxAttempts = 3;
+
+while (attempts < maxAttempts) {
+  try {
+    return await parserService.parse(file);
+  } catch (error) {
+    attempts++;
+    if (attempts >= maxAttempts) throw error;
+    await new Promise(resolve => setTimeout(resolve, 2 ** attempts * 1000));
+  }
+}
+```
+
+### Health Checks
+- **Each service exposes /health endpoint**: Returns service status
+- **Docker Compose healthcheck configuration**: Ensures service readiness
+- **Frontend checks API health**: Before critical operations
+- **Dependency checks**: Verify external services (Qdrant, Supabase) are accessible
+
+```go
+// ✅ Go parser health check
+router.GET("/health", func(c *gin.Context) {
+  c.JSON(200, gin.H{"status": "healthy", "service": "doc-parser"})
+})
+```
+
+---
+## 📊 Qdrant Best Practices
+
+### Collection Management
+- **Lazy creation**: Create collections only when first document uploaded
+- **Delete collections when projects deleted**: Clean up user data
+- **Check collection exists before search**: Prevent errors
+- **Handle dimension mismatches**: Recreate collection if dimensions change
+
+```typescript
+// ✅ Correct - ensure collection exists
+const collectionName = await qdrantService.ensureCollection(
+  userId,
+  1536,  // Embedding dimensions
+  projectId
+);
+
+// ✅ Clean up on project deletion
+await qdrantService.deleteUserData(userId);
+```
+
+### Metadata Schema
+**Required fields** (MUST include in every chunk):
+- `documentId`: UUID of source document
+- `projectId`: UUID of project (for filtering)
+- `userId`: UUID of owner (for collection selection)
+- `fileName`: Original filename (for citations)
+- `fileType`: pdf, docx, etc.
+- `createdAt`: ISO timestamp
+
+**Optional fields** (include when available):
+- `pageNumber`: Page number in document (for citations)
+- `chunkIndex`: Index within document (for ordering)
+- `summary`: Brief chunk summary (future feature)
+- `embeddingModel`: Model used (for debugging)
+
+```typescript
+// ✅ Complete metadata
+const chunk: DocumentChunk = {
+  id: createChunkId(documentId, index, pageNumber),
+  content: chunkText,
+  embedding: embeddingVector,
+  metadata: {
+    documentId,
+    projectId,
+    userId,
+    fileName: "research.pdf",
+    fileType: "pdf",
+    pageNumber: 5,
+    chunkIndex: index,
+    createdAt: new Date().toISOString(),
+    embeddingModel: "text-embedding-3-small"
+  }
+};
+```
+
+### Search Patterns
+- **Always include security filters**: userId (collection), projectId (filtering)
+- **Use appropriate thresholds**: 0.7 for relevance, 0.8+ for high precision
+- **Limit results**: Prevent context overflow (10 chunks ≈ 8000 tokens)
+- **Extract metadata for citations**: fileName, pageNumber for source attribution
+
+```typescript
+// ✅ Correct - secure filtered search
+const results = await qdrantService.searchSimilar(queryVector, {
+  userId: user.id,                 // Required
+  projectId: currentProject.id,    // Filter to project
+  useProjectCollection: true,      // Use project collection
+  threshold: 0.7,                  // Minimum similarity
+  limit: 10                        // Max results
+});
+
+// ❌ Wrong - no security filtering
+const results = await qdrantService.searchSimilar(queryVector, {
+  limit: 100  // Too many results, no access control
+});
+```
+
+### Performance Optimization
+- **Batch upsert for multiple chunks**: 100 chunks at a time
+- **Connection pooling**: Reuse Qdrant client (singleton pattern)
+- **Avoid full collection scans**: Always use filters
+- **Index optimization**: Use Cosine distance for embeddings
+
+```typescript
+// ✅ Batch upsert (efficient)
+const BATCH_SIZE = 100;
+for (let i = 0; i < allChunks.length; i += BATCH_SIZE) {
+  const batch = allChunks.slice(i, i + BATCH_SIZE);
+  await qdrantService.upsertChunks(batch, { useProjectCollection: true });
+}
+
+// ❌ Individual upserts (slow)
+for (const chunk of allChunks) {
+  await qdrantService.upsertChunks([chunk], { useProjectCollection: true });
+}
+```
+
+---
+## ⚡ Svelte 5 Runes Guidelines
+
+### State Management
+- **Use `$state()`** for reactive state (replaces `let` + stores)
+- **Use `$derived()`** for computed values (replaces `$:`)
+- **Use `$effect()`** for side effects (replaces `$:` blocks)
+
+```typescript
+// ✅ Svelte 5 with runes
+let count = $state(0);
+let doubled = $derived(count * 2);
+
+$effect(() => {
+  console.log('Count changed:', count);
+});
+
+// ❌ Svelte 4 style (deprecated in Svelte 5)
+let count = 0;
+$: doubled = count * 2;
+$: console.log('Count changed:', count);
+```
+
+### Component Props
+- **Use `$props<T>()`** for type-safe props
+- **Destructure with defaults**: Provide default values inline
+- **Use `$bindable()`** for two-way binding
+
+```typescript
+// ✅ Correct - type-safe props with defaults
+interface Props {
+  userId: string;
+  onComplete?: () => void;
+}
+
+let { userId, onComplete = () => {} } = $props<Props>();
+
+// ✅ Two-way binding with $bindable
+let {
+  leftSidebarOpen = $bindable(),
+  rightSidebarOpen = $bindable()
+} = $props<{
+  leftSidebarOpen?: boolean;
+  rightSidebarOpen?: boolean;
+}>();
+```
+
+### Event Handling
+- **Inline handlers**: No `on:` directive in Svelte 5
+- **Use standard DOM events**: `onclick`, `onkeydown`, `oninput`, etc.
+
+```svelte
+<!-- ✅ Svelte 5 -->
+<button onclick={handleClick}>Click me</button>
+<input onkeydown={handleKeyPress} />
+
+<!-- ❌ Svelte 4 style (deprecated) -->
+<button on:click={handleClick}>Click me</button>
+<input on:keydown={handleKeyPress} />
+```
+
+### Common Patterns
+- **Loading states**: `let loading = $state(false)`
+- **Derived data**: `let filtered = $derived(items.filter(...))`
+- **Effects with cleanup**: Return cleanup function from `$effect()`
+
+```typescript
+// ✅ Effect with cleanup
+$effect(() => {
+  const interval = setInterval(() => {
+    console.log('Tick');
+  }, 1000);
+
+  return () => clearInterval(interval);  // Cleanup
+});
+
+// ✅ Derived filtering
+let searchQuery = $state('');
+let items = $state([...]);
+let filteredItems = $derived(
+  items.filter(item => item.name.includes(searchQuery))
+);
+```

@@ -1,0 +1,43 @@
+{
+	"mcpServers": {
+		"context7": {
+			"command": "npx",
+			"args": ["-y", "@upstash/context7-mcp"]
+		},
+		"chrome-devtools": {
+			"command": "npx",
+			"args": ["chrome-devtools-mcp@latest"]
+		},
+		"svelte": {
+			"command": "npx",
+			"args": ["-y", "@sveltejs/mcp"]
+		},
+		"daisyui-blueprint": {
+			"type": "stdio",
+			"command": "npx",
+			"args": ["-y", "daisyui-blueprint@latest"]
+		},
+		"MCP_DOCKER": {
+			"command": "docker",
+			"args": ["mcp", "gateway", "run"],
+			"type": "stdio"
+		},
+		"qdrant": {
+			"command": "uvx",
+			"args": ["mcp-server-qdrant"],
+			"env": {
+				"QDRANT_URL": "http://localhost:6333",
+				"COLLECTION_NAME": "papers",
+				"EMBEDDING_MODEL": "sentence-transformers/all-MiniLM-L6-v2"
+			}
+		},
+		"supabase": {
+			"type": "http",
+			"url": "https://mcp.supabase.com/mcp"
+		},
+		"playwright": {
+			"command": "npx",
+			"args": ["@playwright/mcp@latest"]
+		}
+	}
+}
