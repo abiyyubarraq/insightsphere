@@ -40,16 +40,18 @@ export class CitationService {
 
 	/**
 	 * Build context string for LLM prompt from search results
+	 * Format: [doc_id: N] to enable proper citation parsing in frontend
 	 */
 	buildContext(searchResults: SearchResult[]): RAGContext {
 		const citations = this.formatCitations(searchResults);
-		
-		// Build formatted context for LLM
+
+		// Build formatted context for LLM with explicit doc_id format
 		const contextParts = searchResults.map((result, index) => {
-			const pageInfo = result.metadata.pageNumber ? ` (Page ${result.metadata.pageNumber})` : "";
-			const header = `Document ${index + 1}: ${result.metadata.fileName}${pageInfo}`;
+			const docId = index + 1;
+			const pageInfo = result.metadata.pageNumber ? `, Page ${result.metadata.pageNumber}` : "";
+			const header = `[doc_id: ${docId}] Source: ${result.metadata.fileName}${pageInfo}`;
 			const content = result.content.trim();
-			
+
 			return `${header}\n${content}`;
 		});
 

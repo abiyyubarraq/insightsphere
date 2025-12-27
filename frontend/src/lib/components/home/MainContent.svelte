@@ -289,14 +289,6 @@
       </button>
     {/if}
 
-    <div class="flex justify-center bg-transparent">
-      <h1 class="text-xl font-semibold flex">
-        {#if $selectedProject}
-          {$selectedProject.name}
-        {/if}
-      </h1>
-    </div>
-
     {#if $selectedProject && !rightSidebarOpen}
       <button
         class="absolute right-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
