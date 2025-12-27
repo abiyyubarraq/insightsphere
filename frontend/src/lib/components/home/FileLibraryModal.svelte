@@ -156,24 +156,21 @@
     }
   };
 
-  const handleFileClick = async (file: FileLibraryItem, e?: MouseEvent) => {
-    // If shift-click and target is image, show image modal instead
-    if (e?.shiftKey && e.target instanceof HTMLImageElement && file.firstImageUrl) {
-      e.preventDefault();
-      e.stopPropagation();
-      currentImageUrl = file.firstImageUrl;
-      isImageModalOpen = true;
-      return;
-    }
-    // Prevent opening file if shift key is pressed
-    if (e?.shiftKey) {
-      return;
-    }
+  const handleFileClick = async (file: FileLibraryItem) => {
     try {
       const url = await getFileUrl(file.storage_path);
       window.open(url, '_blank');
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to open file';
+    }
+  };
+
+  const handleImageClick = (file: FileLibraryItem, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (file.firstImageUrl) {
+      currentImageUrl = file.firstImageUrl;
+      isImageModalOpen = true;
     }
   };
 
@@ -395,27 +392,33 @@
             {#each files as file (file.fileId)}
               <div
                 class="card bg-base-200/50 hover:bg-base-200 transition-all duration-300 cursor-pointer hover:scale-90 hover:ring-1 hover:ring-primary/50"
+                onclick={() => handleFileClick(file)}
+                role="button"
+                tabindex="0"
+                onkeydown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleFileClick(file);
+                  }
+                }}
               >
                 <div class="card-body p-4">
                   <!-- Thumbnail Placeholder -->
                   <div
                     class="w-full aspect-square bg-base-300/50 rounded-lg flex items-center justify-center mb-2"
-                    onclick={(e) => handleFileClick(file, e)}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleFileClick(file);
-                      }
-                    }}
                   >
                     {#if file.imagePaths && Object.keys(file.imagePaths).length > 0}
-                      <img
-                        src={file.firstImageUrl}
-                        alt={file.name}
-                        class="w-full h-[90%] object-cover"
-                      />
+                      <button
+                        type="button"
+                        class="w-full h-[90%] cursor-zoom-in hover:opacity-80 transition-opacity"
+                        onclick={(e) => handleImageClick(file, e)}
+                      >
+                        <img
+                          src={file.firstImageUrl}
+                          alt={file.name}
+                          class="w-full h-full object-cover pointer-events-none"
+                        />
+                      </button>
                     {:else}
                       <FileText class="w-16 h-16 text-base-content/40" />
                     {/if}
