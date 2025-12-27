@@ -986,11 +986,11 @@ export async function uploadDocument(
   const documentId = crypto.randomUUID();
   const filePath = `${userId}/${projectId}/${documentId}/${file.name}`;
 
-  const { error: uploadError } = await supabase.storage
+  const { error: errorNotif } = await supabase.storage
     .from("documents")
     .upload(filePath, file);
 
-  if (uploadError) throw uploadError;
+  if (errorNotif) throw errorNotif;
 
   // 2. Create document record
   const { data, error } = await supabase

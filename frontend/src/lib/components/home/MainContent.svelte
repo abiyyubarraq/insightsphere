@@ -14,23 +14,27 @@
   let {
     leftSidebarOpen = $bindable(),
     rightSidebarOpen = $bindable(),
-    uploadError = $bindable(),
+    errorNotif = $bindable(),
+    successNotif = $bindable(),
     uploadLoading = $bindable(),
     fileFilter = $bindable(),
     onToggleLeftSidebar,
     onToggleRightSidebar,
     onCreateNewProject,
-    onClearUploadError,
+    onClearErrorNotif,
+    onClearSuccessNotif,
   } = $props<{
     leftSidebarOpen?: boolean;
     rightSidebarOpen?: boolean;
-    uploadError?: string;
+    errorNotif?: string;
+    successNotif?: string;
     uploadLoading?: boolean;
     fileFilter?: string;
     onToggleLeftSidebar: () => void;
     onToggleRightSidebar: () => void;
     onCreateNewProject: () => void;
-    onClearUploadError: () => void;
+    onClearErrorNotif: () => void;
+    onClearSuccessNotif: () => void;
   }>();
 
   // Chat state
@@ -245,13 +249,31 @@
     ? 'ml-50'
     : 'ml-0'} {rightSidebarOpen ? 'mr-80' : 'mr-0'}"
 >
-  <!-- Upload Error Display -->
-  {#if uploadError}
-    <div class="alert alert-error mx-4 mt-4">
-      {uploadError}
-      <button class="btn btn-sm btn-ghost" onclick={onClearUploadError}>
-        <X class="w-4 h-4" />
-      </button>
+  <!-- Error Notification Display -->
+  {#if errorNotif}
+    <div class="flex justify-center mt-4">
+      <div class="alert alert-error w-auto max-w-md relative pr-10">
+        <span class="text-center flex-1">{errorNotif}</span>
+        <div class="absolute top-2.5 right-2.5">
+          <button class="btn btn-xs btn-ghost" onclick={onClearErrorNotif}>
+            <X class="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Success Notification Display -->
+  {#if successNotif}
+    <div class="flex justify-center mt-4 text-center">
+      <div class="alert alert-success w-auto max-w-md relative pr-10">
+        <span class="text-center flex-1">{successNotif}</span>
+        <div class="absolute top-2.5 right-2.5">
+          <button class="btn btn-xs btn-ghost" onclick={onClearSuccessNotif}>
+            <X class="w-3 h-3" />
+          </button>
+        </div>
+      </div>
     </div>
   {/if}
 

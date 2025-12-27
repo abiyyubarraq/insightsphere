@@ -31,7 +31,8 @@
   let loading = $state(false);
   let error = $state('');
   let uploadLoading = $state(false);
-  let uploadError = $state('');
+  let errorNotif = $state('');
+  let successNotif = $state('');
   let fileInput: HTMLInputElement | undefined = $state();
   let uploadedFiles: ProjectFile[] = $state([]);
   let removingFileLoading: Record<string, boolean> = $state({});
@@ -84,10 +85,14 @@
         )
   );
 
-  // Helper function to clear errors
+  // Helper function to clear notifications
   const clearErrors = () => {
     error = '';
-    uploadError = '';
+    errorNotif = '';
+  };
+
+  const clearSuccessNotif = () => {
+    successNotif = '';
   };
 
   // Common project creation logic
@@ -128,7 +133,7 @@
 
     if (!files || files.length === 0) return;
     if (!$selectedProject || !$user) {
-      uploadError = 'Please select a project first';
+      errorNotif = 'Please select a project first';
       return;
     }
 
@@ -142,13 +147,13 @@
       // Validate file type
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (!allowedTypes.includes(fileExtension)) {
-        uploadError = `File "${file.name}" is not a valid type (PDF, DOC, DOCX, or TXT)`;
+        errorNotif = `File "${file.name}" is not a valid type (PDF, DOC, DOCX, or TXT)`;
         return;
       }
 
       // Validate file size
       if (file.size > maxSize) {
-        uploadError = `File "${file.name}" is too large (must be less than 100MB)`;
+        errorNotif = `File "${file.name}" is too large (must be less than 100MB)`;
         return;
       }
     }
@@ -176,7 +181,7 @@
         uploadLoading = loadingState;
       },
       (errorMsg) => {
-        uploadError = errorMsg;
+        errorNotif = errorMsg;
       }
     );
   };
@@ -207,7 +212,7 @@
         removingFileLoading[file.id] = loadingState;
       },
       (errorMsg) => {
-        uploadError = errorMsg;
+        errorNotif = errorMsg;
       }
     );
 
@@ -226,7 +231,7 @@
     try {
       await downloadFile(storagePath);
     } catch (error) {
-      uploadError = error instanceof Error ? error.message : 'Failed to download file';
+      errorNotif = error instanceof Error ? error.message : 'Failed to download file';
     } finally {
       downloadingFileLoading[fileId] = false;
     }
@@ -252,7 +257,7 @@
     const file = uploadedFiles.find((f) => f.id === fileId);
 
     if (!file || !$selectedProject || !$user) {
-      uploadError = 'File or project not found';
+      errorNotif = 'File or project not found';
       return;
     }
 
@@ -272,7 +277,7 @@
         processingFileLoading[fileId] = loadingState;
       },
       (errorMsg) => {
-        uploadError = errorMsg;
+        errorNotif = errorMsg;
       }
     );
   };
@@ -282,7 +287,7 @@
     const file = uploadedFiles.find((f) => f.id === fileId);
 
     if (!file || !$selectedProject || !$user) {
-      uploadError = 'File or project not found';
+      errorNotif = 'File or project not found';
       return;
     }
 
@@ -306,7 +311,7 @@
         processingFileLoading[fileId] = loadingState;
       },
       (errorMsg) => {
-        uploadError = errorMsg;
+        errorNotif = errorMsg;
       }
     );
   };
@@ -325,10 +330,10 @@
         currentSummaryFileName = file.file_name;
         showSummaryModal = true;
       } else {
-        uploadError = 'Summary not found for this file';
+        errorNotif = 'Summary not found for this file';
       }
     } catch (error) {
-      uploadError = error instanceof Error ? error.message : 'Failed to load summary';
+      errorNotif = error instanceof Error ? error.message : 'Failed to load summary';
     }
   };
 
@@ -337,12 +342,12 @@
     const project = $selectedProject;
 
     if (!project) {
-      uploadError = 'No project selected';
+      errorNotif = 'No project selected';
       return;
     }
 
     generatingSummaryLoading[fileId] = true;
-    uploadError = '';
+    errorNotif = '';
 
     try {
       // Find the file in the uploaded files
@@ -363,15 +368,15 @@
         await refreshProjectFiles(project);
 
         // Show success message
-        uploadError = `Summary generated successfully for ${file.file_name}`;
+        successNotif = `Summary generated successfully for ${file.file_name}`;
         setTimeout(() => {
-          uploadError = '';
+          successNotif = '';
         }, 3000);
       } else {
         throw new Error(result.error || 'Failed to generate summary');
       }
     } catch (error) {
-      uploadError = error instanceof Error ? error.message : 'Failed to generate summary';
+      errorNotif = error instanceof Error ? error.message : 'Failed to generate summary';
     } finally {
       generatingSummaryLoading[fileId] = false;
     }
@@ -561,13 +566,15 @@
   <MainContent
     bind:leftSidebarOpen
     bind:rightSidebarOpen
-    bind:uploadError
+    bind:errorNotif
+    bind:successNotif
     bind:uploadLoading
     bind:fileFilter
     onToggleLeftSidebar={toggleLeftSidebar}
     onToggleRightSidebar={toggleRightSidebar}
     onCreateNewProject={handleCreateNewProject}
-    onClearUploadError={() => (uploadError = '')}
+    onClearErrorNotif={() => (errorNotif = '')}
+    onClearSuccessNotif={clearSuccessNotif}
   />
 </div>
 
