@@ -3,6 +3,7 @@
   import { projects } from '../../../stores/project';
   import { searchFiles, getFileUrl } from '../../../services/supabase';
   import type { FileLibraryItem } from '../../../../../shared/types/index';
+  import ImagePreviewModal from '../common/ImagePreviewModal.svelte';
 
   let { isOpen = $bindable(false) } = $props<{
     isOpen?: boolean;
@@ -20,7 +21,7 @@
   let firstLoad = $state(false);
   let isHighlightFilename = $state(false);
   let isImageModalOpen = $state(false);
-  let currentImageUrl = $state<string | null>(null);
+  let currentPreviewFile = $state<FileLibraryItem | null>(null);
 
   // Computed values for project filter
   const isAllProjectsSelected = $derived(
@@ -168,15 +169,15 @@
   const handleImageClick = (file: FileLibraryItem, e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (file.firstImageUrl) {
-      currentImageUrl = file.firstImageUrl;
+    if (file.firstImageUrl && file.imagePaths) {
+      currentPreviewFile = file;
       isImageModalOpen = true;
     }
   };
 
   const closeImageModal = () => {
     isImageModalOpen = false;
-    currentImageUrl = null;
+    currentPreviewFile = null;
   };
 
   const handleClose = () => {
@@ -485,42 +486,13 @@
 {/if}
 
 <!-- Image Preview Modal -->
-{#if isImageModalOpen && currentImageUrl}
-  <div
-    class="modal modal-open"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="image-preview-title"
-    tabindex="-1"
-    onkeydown={(e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        closeImageModal();
-      }
-    }}
-    onclick={(e) => {
-      // Close when clicking on backdrop
-      if (e.target === e.currentTarget) {
-        closeImageModal();
-      }
-    }}
-  >
-    <div class="modal-box max-w-[95vw] max-h-[95vh] bg-base-100/98 p-4">
-      <div class="flex justify-between items-center mb-4">
-        <h3 id="image-preview-title" class="font-bold text-xl">Image Preview</h3>
-        <button class="btn btn-sm btn-circle btn-ghost" onclick={closeImageModal}>
-          <X class="w-5 h-5" />
-        </button>
-      </div>
-      <div class="flex justify-center items-center overflow-auto max-h-[85vh]">
-        <img
-          src={currentImageUrl}
-          alt="Preview"
-          class="max-w-full max-h-[85vh] object-contain rounded-lg"
-        />
-      </div>
-    </div>
-  </div>
+{#if currentPreviewFile?.imagePaths}
+  <ImagePreviewModal
+    bind:isOpen={isImageModalOpen}
+    imagePaths={currentPreviewFile.imagePaths}
+    fileName={currentPreviewFile.name}
+    onClose={closeImageModal}
+  />
 {/if}
 
 <style>
