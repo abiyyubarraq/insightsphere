@@ -32,6 +32,15 @@ services:
       - shared_temp:/tmp
     depends_on:
       - qdrant
+    # Resource limits to prevent CPU/memory exhaustion during OCR
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 1G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -56,14 +65,22 @@ services:
       - PORT=8000
       - QDRANT_URL=http://qdrant:6333
       - DOC_PARSER_URL=http://doc-parser:8080
+      - DENO_V8_FLAGS=--max-old-space-size=6144
     working_dir: /app
     volumes:
       - ../api:/app
       - ../shared:/shared
       - ../vector-utils:/vector-utils
       - shared_temp:/tmp
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 3G
+    # Note: --watch removed to prevent memory issues. Use 'docker compose restart api' after code changes
     command: >
-      sh -c "deno run --allow-net --allow-env --allow-read --allow-write --watch main.ts"
+      sh -c "deno run --allow-net --allow-env --allow-read --allow-write --v8-flags=--max-old-space-size=6144,--expose-gc main.ts"
     depends_on:
       - qdrant
       - doc-parser

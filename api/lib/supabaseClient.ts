@@ -19,6 +19,18 @@ export interface DocumentRecord {
   image_paths?: Record<number, string>;
 }
 
+export interface DocumentPageRecord {
+  id: string;
+  document_id: string;
+  page_number: number;
+  ocr_text: string;
+  char_count: number;
+  extraction_method: "ocr" | "native";
+  image_storage_path?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class SupabaseService {
   private client: SupabaseClient;
   private bucketName: string;
@@ -388,6 +400,49 @@ export class SupabaseService {
       console.error("Failed to get public URL:", error);
       throw new Error(
         `Failed to get public URL: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Store per-page OCR results using UPSERT for idempotency
+   * Handles reprocessing by updating existing pages
+   */
+  async storeDocumentPages(
+    documentId: string,
+    pages: Array<{ page_number: number; text: string }>,
+    imagePaths?: Record<number, string>
+  ): Promise<void> {
+    try {
+      const pageRecords = pages.map((page) => ({
+        document_id: documentId,
+        page_number: page.page_number,
+        ocr_text: page.text,
+        char_count: page.text.length,
+        extraction_method: "ocr" as const,
+        image_storage_path: imagePaths?.[page.page_number] || null,
+      }));
+
+      const { error } = await this.client
+        .from("document_pages")
+        .upsert(pageRecords, {
+          onConflict: "document_id,page_number",
+          ignoreDuplicates: false, // Update existing
+        });
+
+      if (error) {
+        throw new Error(`Failed to store document pages: ${error.message}`);
+      }
+
+      console.log(
+        `✅ Stored ${pageRecords.length} pages for document ${documentId}`
+      );
+    } catch (error) {
+      console.error("Document pages storage failed:", error);
+      throw new Error(
+        `Failed to store document pages: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );

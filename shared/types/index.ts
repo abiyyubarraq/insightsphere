@@ -28,6 +28,18 @@ export interface DocumentMetadata {
   processedAt?: string;
 }
 
+// Document page types (per-page OCR storage)
+export interface DocumentPage {
+  id: string;
+  documentId: string;
+  pageNumber: number;
+  text: string;
+  charCount: number;
+  extractionMethod: string;
+  imageUrl?: string;
+  createdAt: string;
+}
+
 // Analysis types
 export interface AnalysisRequest {
   documentId: string;
