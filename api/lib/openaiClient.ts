@@ -96,26 +96,55 @@ export class OpenAIClient {
 
   async generateBatchEmbeddings(
     texts: string[],
-    model = "text-embedding-3-small"
+    model = "text-embedding-3-small",
+    batchSize = 20
   ): Promise<EmbeddingResponse[]> {
     try {
-      const response = await this.client.embeddings.create({
-        model,
-        input: texts,
-        encoding_format: "float",
-      });
+      const allResults: EmbeddingResponse[] = [];
+      const totalBatches = Math.ceil(texts.length / batchSize);
 
-      if (!response.data || response.data.length === 0) {
-        throw new Error("No embedding data returned from OpenAI");
+      console.log(
+        `📦 Processing ${texts.length} texts in ${totalBatches} batches of ${batchSize}...`
+      );
+
+      for (let i = 0; i < texts.length; i += batchSize) {
+        const batch = texts.slice(i, i + batchSize);
+        const batchNumber = Math.floor(i / batchSize) + 1;
+
+        console.log(
+          `  🔄 Batch ${batchNumber}/${totalBatches}: ${batch.length} texts...`
+        );
+
+        const response = await this.client.embeddings.create({
+          model,
+          input: batch,
+          encoding_format: "float",
+        });
+
+        if (!response.data || response.data.length === 0) {
+          throw new Error(
+            `No embedding data returned for batch ${batchNumber}`
+          );
+        }
+
+        const batchResults = response.data.map((item) => ({
+          embedding: item.embedding,
+          usage: {
+            prompt_tokens: response.usage?.prompt_tokens || 0,
+            total_tokens: response.usage?.total_tokens || 0,
+          },
+        }));
+
+        allResults.push(...batchResults);
+
+        // Small delay between batches to allow GC and avoid rate limits
+        if (i + batchSize < texts.length) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
       }
 
-      return response.data.map((item) => ({
-        embedding: item.embedding,
-        usage: {
-          prompt_tokens: response.usage?.prompt_tokens || 0,
-          total_tokens: response.usage?.total_tokens || 0,
-        },
-      }));
+      console.log(`✅ Completed all ${totalBatches} batches`);
+      return allResults;
     } catch (error) {
       console.error("OpenAI batch embedding generation failed:", error);
       throw new Error(

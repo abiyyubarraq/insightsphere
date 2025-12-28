@@ -132,12 +132,14 @@ export class QdrantService {
 
   async upsertChunks(
     chunks: DocumentChunk[],
-    options: { useProjectCollection?: boolean } = {},
+    options: { useProjectCollection?: boolean; batchSize?: number } = {},
   ): Promise<void> {
     try {
       if (chunks.length === 0) {
         throw new Error("No chunks provided");
       }
+
+      const batchSize = options.batchSize || 50; // Process in batches to reduce memory
 
       // Get user and project info from first chunk
       const firstChunk = chunks[0];
@@ -156,19 +158,39 @@ export class QdrantService {
         options.useProjectCollection ? projectId : undefined,
       );
 
-      const points = chunks.map((chunk) => ({
-        id: chunk.id,
-        vector: chunk.embedding,
-        payload: {
-          content: chunk.content,
-          ...chunk.metadata,
-        },
-      }));
+      // Process in batches to reduce memory pressure
+      const totalBatches = Math.ceil(chunks.length / batchSize);
+      console.log(
+        `📦 Upserting ${chunks.length} chunks in ${totalBatches} batches...`,
+      );
 
-      await this.client.upsert(collectionName, {
-        wait: true,
-        points,
-      });
+      for (let i = 0; i < chunks.length; i += batchSize) {
+        const batchChunks = chunks.slice(i, i + batchSize);
+        const batchNumber = Math.floor(i / batchSize) + 1;
+
+        const points = batchChunks.map((chunk) => ({
+          id: chunk.id,
+          vector: chunk.embedding,
+          payload: {
+            content: chunk.content,
+            ...chunk.metadata,
+          },
+        }));
+
+        await this.client.upsert(collectionName, {
+          wait: true,
+          points,
+        });
+
+        console.log(
+          `  ✅ Batch ${batchNumber}/${totalBatches}: ${batchChunks.length} chunks upserted`,
+        );
+
+        // Small delay between batches to allow GC
+        if (i + batchSize < chunks.length) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      }
 
       console.log(
         `Successfully upserted ${chunks.length} chunks to collection: ${collectionName}`,

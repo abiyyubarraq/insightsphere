@@ -36,7 +36,9 @@
       "Bash(find:*)",
       "Bash(docker:*)",
       "Bash(poetry:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(deno check:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
