@@ -14,6 +14,10 @@ deno-dir/
 .env.production
 .env.test
 
+# Sensitive config files (never commit these)
+dev/New Text Document.txt
+dev/*.txt
+
 # IDE
 .vscode/
 .idea/
