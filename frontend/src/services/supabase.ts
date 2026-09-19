@@ -49,6 +49,7 @@ export const sendChatMessage = async (
   });
 
   if (!response.ok) {
+    await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || errorData.details || 'Failed to send message');
   }
@@ -72,6 +73,7 @@ const authedFetch = async (path: string, init: RequestInit = {}) => {
   });
 
   if (!response.ok) {
+    await assertSessionValid(response);
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || err.details || `Request failed (${response.status})`);
   }
@@ -83,6 +85,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
   },
 });
+
+/**
+ * A 401 means the session is over, not that the request was malformed.
+ *
+ * The token lives in localStorage and outlives the account it belonged to, so
+ * a deleted or expired user kept being sent along and every call failed. The
+ * file library showed an error banner above an empty list with no way forward
+ * except signing out by hand.
+ *
+ * A full page load rather than a client-side navigation, so nothing survives in
+ * memory from the session that just ended.
+ */
+const assertSessionValid = async (response: Response): Promise<void> => {
+  if (response.status !== 401) return;
+
+  await supabase.auth.signOut().catch(() => {});
+
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login';
+  }
+
+  throw new Error('Your session has expired. Please sign in again.');
+};
 
 // Google OAuth Sign-In / Sign-Up
 export const signInWithGoogle = async (): Promise<void> => {
@@ -274,6 +299,7 @@ export const generateDocumentSummary = async (
   });
 
   if (!response.ok) {
+    await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || 'Failed to generate summary');
   }
@@ -373,6 +399,7 @@ export const searchFiles = async (
   });
 
   if (!response.ok) {
+    await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || errorData.details || 'Failed to fetch files');
   }
@@ -561,6 +588,7 @@ export const processDocument = async (
   });
 
   if (!response.ok) {
+    await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || errorData.details || 'Failed to process document');
   }

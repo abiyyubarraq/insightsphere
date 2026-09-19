@@ -27,10 +27,24 @@ local data volumes.
 | `dev/.env` | `docker compose -f dev/compose.yaml up -d --force-recreate api` |
 | Parser code | `docker compose -f dev/compose.yaml up -d --build doc-parser` |
 | Frontend | nothing, Vite reloads |
+| Ran `npm run build` | **restart the frontend** — see below |
 
 `restart` does not re-read the env file, which is the one that catches people
 out. The API deliberately does not run under `deno --watch`: OCR holds large
 buffers and the watcher pushed the container into swap.
+
+**Running `npm run build` while the dev server is up breaks it.** The build
+regenerates `.svelte-kit/generated/`, the running dev server hot-reloads those
+files, and it picks up the production Content Security Policy along with them.
+That policy has no `http://localhost:8000` in `connect-src`, because in
+production the API is same-origin behind Caddy. Every API call then fails in the
+browser with
+
+    Refused to connect ... violates the following Content Security Policy
+    directive: "connect-src 'self' https:"
+
+while the same call from curl returns 200, which makes it look like a code bug.
+Restart the frontend after any build.
 
 ## Checking the work
 
