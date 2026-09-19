@@ -11,7 +11,9 @@ services:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      # This image has no curl or wget. A successful TCP connect means the
+      # server is accepting requests, which is the signal we need here.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -27,8 +29,6 @@ services:
       - PORT=8080
       - GIN_MODE=debug
     volumes:
-      - ../doc-parser:/app
-      - /app/doc-parser
       - shared_temp:/tmp
     depends_on:
       - qdrant
@@ -42,7 +42,7 @@ services:
           cpus: '2'
           memory: 1G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -85,7 +85,9 @@ services:
       - qdrant
       - doc-parser
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # This image has no curl or wget. A successful TCP connect means the
+      # server is accepting requests, which is the signal we need here.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -137,7 +139,6 @@ services:
 
 volumes:
   qdrant_data:
-  redis_data:
   shared_temp:
 
 networks:

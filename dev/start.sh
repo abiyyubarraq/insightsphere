@@ -1,115 +1,64 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Starts the local backend stack (qdrant, doc-parser, api).
+# Runs from anywhere: it resolves its own directory first.
+#
+#   ./dev/start.sh            start, reusing cached images
+#   ./dev/start.sh --rebuild  force a rebuild first
+set -euo pipefail
 
-# InsightSphere Backend Startup Script
-# This script starts all backend services for local development
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
-set -e
-
-echo "🚀 Starting InsightSphere Backend Services..."
-
-# Check if .env file exists
-if [ ! -f ".env" ]; then
-    echo "⚠️  .env file not found!"
-    echo "📋 Please copy .env.example to .env and fill in your configuration:"
-    echo "   cp .env.example .env"
-    echo "   nano .env  # Edit with your actual values"
-    exit 1
+if [ ! -f .env ]; then
+  echo "dev/.env not found."
+  echo "  cp dev/.env.example dev/.env   then fill in the Supabase and OpenAI values"
+  exit 1
 fi
 
-# Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-    echo "❌ Docker is not running. Please start Docker and try again."
-    exit 1
+if ! docker info >/dev/null 2>&1; then
+  echo "Docker is not running."
+  exit 1
 fi
 
-# Start services with file watching for auto-rebuild
-echo "🐳 Starting Docker services with file watching..."
-echo "💡 Using Docker Compose watch mode for auto-rebuild on file changes"
-
-# Stop any existing containers first (but preserve volumes)
-echo "🛑 Stopping existing containers..."
-docker compose down
-
-echo "🧹 Cleaning up old containers (preserving data volumes)..."
-# Remove old containers but keep volumes (preserves Qdrant data)
-docker compose down --remove-orphans
-# Only prune containers and networks, not volumes
-docker container prune -f
-docker network prune -f
-
-echo "🔨 Building fresh containers to ensure latest code..."
-# Force rebuild containers to get latest code
-docker compose build --no-cache
-
-echo "🚀 Starting containers..."
-docker compose up -d
-
-# Enable watch mode for development (requires Docker Compose v2.22+)
-echo "🔄 Enabling file watch mode..."
-docker compose watch &
-WATCH_PID=$!
-
-echo "⏳ Waiting for services to be ready..."
-sleep 10
-
-# Check service health
-echo "🔍 Checking service health..."
-
-echo -n "  Qdrant: "
-if curl -s http://localhost:6333/health > /dev/null; then
-    echo "✅ Running"
-else
-    echo "❌ Not responding"
+if [ "${1:-}" = "--rebuild" ]; then
+  echo "Rebuilding images..."
+  docker compose build
 fi
 
-echo -n "  Parser: "
-if curl -s http://localhost:8080/health > /dev/null; then
-    echo "✅ Running"
-else
-    echo "❌ Not responding"
+echo "Starting services..."
+docker compose up -d --remove-orphans
+
+echo "Waiting for health checks..."
+deadline=$(( SECONDS + 180 ))
+while [ $SECONDS -lt $deadline ]; do
+  # Ask docker for health rather than curl: the images have no HTTP client.
+  pending=$(docker compose ps --format '{{.Status}}' | grep -c -E 'starting|unhealthy' || true)
+  [ "$pending" -eq 0 ] && break
+  sleep 5
+done
+
+echo
+docker compose ps --format 'table {{.Name}}\t{{.Status}}'
+echo
+if docker compose ps --format '{{.Status}}' | grep -q -E 'starting|unhealthy'; then
+  echo "Some services are not healthy. Check: docker compose -f dev/compose.yaml logs"
+  exit 1
 fi
 
-echo -n "  API: "
-if curl -s http://localhost:8000/health > /dev/null; then
-    echo "✅ Running"
-else
-    echo "❌ Not responding"
-fi
+cat <<'EOF'
 
-echo -n "  Frontend: "
-if curl -s http://localhost:5173 > /dev/null; then
-    echo "✅ Running"
-else
-    echo "❌ Not responding"
-fi
+Ready.
 
-echo ""
-echo "🎉 InsightSphere Backend is ready!"
-echo ""
-echo "💾 Data Persistence:"
-echo "  Qdrant data is preserved between restarts"
-echo "  Your processed documents and vectors remain intact"
-echo ""
-echo "📊 Service URLs:"
-echo "  Frontend:  http://localhost:5173"
-echo "  API:       http://localhost:8000"
-echo "  Parser:    http://localhost:8080"
-echo "  Qdrant:    http://localhost:6333"
-echo ""
-echo "🧪 Test Dashboard:"
-echo "  Browser Tests: http://localhost:8000/v1/test/dashboard"
-echo ""
-echo "📋 Useful commands:"
-echo "  View logs:        docker compose logs -f"
-echo "  Stop services:    docker compose down"
-echo "  Restart:          docker compose restart"
-echo "  Stop file watch:  kill $WATCH_PID"
-echo ""
-echo "🔧 Additional scripts:"
-echo "  Full reset:       bash dev/reset.sh    (⚠️  deletes all data)"
-echo ""
-echo "🔄 Auto-rebuild enabled:"
-echo "  • Go files (doc-parser): Auto-rebuild on change"
-echo "  • TypeScript files (API): Auto-reload with Deno watch"
-echo "  • Frontend files: Auto-reload with Vite HMR"
-echo ""
+  API      http://localhost:8000     (health: /health)
+  Parser   http://localhost:8080     (internal use)
+  Qdrant   http://localhost:6333/dashboard
+
+Start the frontend separately:
+
+  cd frontend && npm run start       http://localhost:5173
+
+Useful:
+  docker compose -f dev/compose.yaml logs -f
+  docker compose -f dev/compose.yaml restart api     after changing API code
+  docker compose -f dev/compose.yaml watch           rebuild Go on change (run in its own terminal)
+  ./dev/reset.sh                                     wipe this project's data and start over
+EOF
