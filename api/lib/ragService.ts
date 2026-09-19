@@ -1,6 +1,6 @@
 /**
  * RAG Service - Complete Query Orchestration
- * Handles: Query embedding → Vector search → Context building → LLM generation
+ * Handles: Query contextualisation → embedding → vector search → context building → LLM generation
  */
 
 import { qdrantService } from "./qdrantClient.ts";
@@ -8,13 +8,34 @@ import { SEARCH_DEFAULTS } from "./constants.ts";
 import { llmClient, type LLMResponse } from "./llmClient.ts";
 import { type Citation, citationService } from "./citationService.ts";
 import { openaiClient } from "./openaiClient.ts";
+import {
+  type CompleteRewrite,
+  contextualiseQuery,
+  type HistoryTurn,
+  REWRITE_MAX_TOKENS,
+  REWRITE_MODEL,
+} from "./queryRewrite.ts";
+import {
+  CANDIDATE_DEPTH,
+  dropDuplicateChunks,
+  fuseByRRF,
+  isWeakMatch,
+  sortByScore,
+  topScore,
+} from "./retrieval.ts";
 
 export interface RAGQueryOptions {
   max_chunks?: number;
   similarity_threshold?: number;
   use_short_context?: boolean;
   max_context_length?: number;
-  conversation_history?: string; // Optional conversation context
+  /** Formatted history for the answering model. */
+  conversation_history?: string;
+  /**
+   * The same history as turns, for the query rewrite. Absent on the one-shot
+   * query endpoint, which has no conversation and must not pay for a rewrite.
+   */
+  conversation_turns?: HistoryTurn[];
 }
 
 export interface RAGQueryResult {
@@ -22,10 +43,17 @@ export interface RAGQueryResult {
   citations: Citation[];
   metadata: {
     query: string;
+    /**
+     * What retrieval actually searched for. Differs from query only when the
+     * rewrite ran and was accepted.
+     */
+    search_query: string;
     project_id: string;
     chunks_retrieved: number;
     chunks_used: number;
     avg_similarity: number;
+    top_similarity: number;
+    low_confidence: boolean;
     embedding_model: string;
     llm_model: string;
     processing_time_ms: number;
@@ -53,41 +81,70 @@ export class RAGService {
       use_short_context = false,
       max_context_length = SEARCH_DEFAULTS.maxContextLength,
       conversation_history,
+      conversation_turns = [],
     } = options;
 
     try {
-      // Step 1: Generate query embedding
-      const { queryEmbedding, embeddingModel } = await this
-        .generateQueryEmbedding(query);
-
-      // Step 2: Search Qdrant for relevant chunks
-      console.log(
-        `🔍 Searching Qdrant with query embedding (${queryEmbedding.length} dimensions)...`,
-      );
-      console.log(
-        `📋 Search params: userId=${userId}, projectId=${projectId}, useProjectCollection=true, limit=${max_chunks}, threshold=${similarity_threshold}`,
+      // Step 1: Turn a follow-up into a question that can be searched for.
+      // With no history this returns immediately and makes no network call.
+      const { searchQuery, rewritten } = await contextualiseQuery(
+        query,
+        conversation_turns,
+        this.completeRewrite,
       );
 
-      const searchResults = await qdrantService.searchSimilar(queryEmbedding, {
-        userId,
-        projectId,
-        useProjectCollection: true,
-        limit: max_chunks,
-        threshold: similarity_threshold,
-      });
-
+      // Logged as a pair on purpose: the effect of a rewrite can only be judged
+      // against the question it replaced, on this corpus.
       console.log(
-        `📊 Found ${searchResults.length} relevant chunks (threshold: ${similarity_threshold})`,
+        rewritten
+          ? `✏️ Rewritten for retrieval: "${query}" -> "${searchQuery}"`
+          : `✏️ No rewrite (${
+            conversation_turns.length === 0 ? "first turn" : "kept original"
+          })`,
       );
 
-      // Debug: Log search results if any found
+      // Step 2: Embed whichever queries we are searching with
+      const queries = rewritten ? [query, searchQuery] : [query];
+      const { embeddings, embeddingModel } = await this.generateQueryEmbeddings(
+        queries,
+      );
+
+      // Step 3: Search Qdrant once per query, fetching deeper than the k we
+      // keep. Fusing two lists of 5 gives RRF almost nothing to agree on, and a
+      // chunk ranked 6th by both phrasings could never surface. Qdrant
+      // prefetches 100 for its own fusion; this costs one query either way.
+      const candidateLimit = Math.max(max_chunks * CANDIDATE_DEPTH, 20);
+
+      console.log(
+        `📋 Search: userId=${userId}, projectId=${projectId}, candidates=${candidateLimit}, keep=${max_chunks}, threshold=${similarity_threshold}`,
+      );
+
+      const lists = await Promise.all(
+        embeddings.map((queryEmbedding) =>
+          qdrantService.searchSimilar(queryEmbedding, {
+            userId,
+            projectId,
+            useProjectCollection: true,
+            limit: candidateLimit,
+            threshold: similarity_threshold,
+          })
+        ),
+      );
+
+      // Step 4: Fuse, drop duplicate passages, take the top k, then order by
+      // score. Fusion decides which chunks survive; score decides the order the
+      // model and the UI see, which is what citation numbers depend on.
+      const fused = dropDuplicateChunks(fuseByRRF(lists));
+      const searchResults = sortByScore(fused.slice(0, max_chunks));
+
+      console.log(
+        `📊 ${lists.map((list) => list.length).join(" + ")} hits -> ${
+          fused.length
+        } after fusion and de-duplication -> ${searchResults.length} used (threshold: ${similarity_threshold})`,
+      );
+
       if (searchResults.length > 0) {
         console.log(`🎯 Top result similarity: ${searchResults[0].score}`);
-        console.log(
-          `📄 Top result content preview: ${
-            searchResults[0].content.substring(0, 100)
-          }...`,
-        );
       } else {
         console.log(`⚠️ No results found. This could indicate:`);
         console.log(`   - No documents processed for this project`);
@@ -101,13 +158,14 @@ export class RAGService {
       if (searchResults.length === 0) {
         return this.createNoResultsResponse(
           query,
+          searchQuery,
           projectId,
           embeddingModel,
           Date.now() - startTime,
         );
       }
 
-      // Step 3: Build context and citations
+      // Step 5: Build context and citations
       const ragContext = use_short_context
         ? citationService.createShortContext(searchResults, max_context_length)
         : citationService.buildContext(searchResults);
@@ -116,32 +174,46 @@ export class RAGService {
         `📝 Context built: ${ragContext.formatted_context.length} characters`,
       );
 
-      // Step 4: Generate LLM response with optional conversation history
+      // Step 6: Answer, saying so when the context is only a weak match
+      const top_similarity = topScore(searchResults);
+      const low_confidence = isWeakMatch(searchResults);
+
+      if (low_confidence) {
+        console.log(
+          `⚠️ Weak match: top score ${
+            top_similarity.toFixed(3)
+          } is below the sufficiency floor`,
+        );
+      }
+
       const llmResponse = await this.generateLLMResponse(
         ragContext.formatted_context,
         query,
-        conversation_history,
+        {
+          conversationHistory: conversation_history,
+          lowConfidence: low_confidence,
+        },
       );
 
       console.log(
         `🤖 LLM response generated: ${llmResponse.answer.length} characters`,
       );
 
-      // Step 5: Format final result
-      const processingTime = Date.now() - startTime;
-
       return {
         answer: llmResponse.answer,
         citations: ragContext.citations,
         metadata: {
           query,
+          search_query: searchQuery,
           project_id: projectId,
           chunks_retrieved: searchResults.length,
           chunks_used: ragContext.total_chunks,
           avg_similarity: ragContext.avg_similarity,
+          top_similarity,
+          low_confidence,
           embedding_model: embeddingModel,
           llm_model: llmResponse.model,
-          processing_time_ms: processingTime,
+          processing_time_ms: Date.now() - startTime,
           context_length: ragContext.formatted_context.length,
         },
       };
@@ -156,30 +228,51 @@ export class RAGService {
   }
 
   /**
-   * Generate embedding for query using same model as documents
+   * The rewrite runs on the cheap model at temperature 0. It is passed into
+   * contextualiseQuery rather than imported by it, so that module stays free of
+   * the OpenAI singleton and can be tested.
+   */
+  private completeRewrite: CompleteRewrite = async (messages, signal) => {
+    const result = await openaiClient.generateChatCompletion({
+      model: REWRITE_MODEL,
+      messages,
+      max_tokens: REWRITE_MAX_TOKENS,
+      temperature: 0,
+      signal,
+    });
+    return result.answer;
+  };
+
+  /**
+   * Generate embeddings for the queries using same model as documents
    * CRITICAL: Must use the same embedding model and dimensions as document processing
    */
-  private async generateQueryEmbedding(query: string): Promise<{
-    queryEmbedding: number[];
+  private async generateQueryEmbeddings(queries: string[]): Promise<{
+    embeddings: number[][];
     embeddingModel: string;
   }> {
-    let queryEmbedding: number[] = [];
-    let embeddingModel = "text-embedding-3-small";
-
     try {
-      // CRITICAL: Use the same model as document processing to ensure dimension consistency
       console.log(
-        "🤖 Generating OpenAI embedding for query (same as document processing)...",
+        `🤖 Generating OpenAI embeddings for ${queries.length} quer${
+          queries.length === 1 ? "y" : "ies"
+        } (same as document processing)...`,
       );
-      const embedding = await openaiClient.generateEmbedding({
-        text: query,
-        model: "text-embedding-3-small", // Must match document processing
-      });
-      queryEmbedding = embedding.embedding;
-      embeddingModel = "text-embedding-3-small";
+
+      const embeddings = await Promise.all(
+        queries.map(async (text) => {
+          const embedding = await openaiClient.generateEmbedding({
+            text,
+            model: "text-embedding-3-small", // Must match document processing
+          });
+          return embedding.embedding;
+        }),
+      );
+
       console.log(
-        `✅ Generated OpenAI embedding (${queryEmbedding.length} dimensions) - matches document processing`,
+        `✅ Generated OpenAI embeddings (${embeddings[0].length} dimensions) - matches document processing`,
       );
+
+      return { embeddings, embeddingModel: "text-embedding-3-small" };
     } catch (openaiError) {
       console.error("❌ OpenAI embedding failed:", openaiError);
 
@@ -192,8 +285,6 @@ export class RAGService {
           }`,
       );
     }
-
-    return { queryEmbedding, embeddingModel };
   }
 
   /**
@@ -202,14 +293,10 @@ export class RAGService {
   private async generateLLMResponse(
     context: string,
     query: string,
-    conversationHistory?: string,
+    options: { conversationHistory?: string; lowConfidence?: boolean },
   ): Promise<LLMResponse> {
     try {
-      return await llmClient.generateAnswer(
-        context,
-        query,
-        conversationHistory,
-      );
+      return await llmClient.generateAnswer(context, query, options);
     } catch (error) {
       console.error("LLM generation failed:", error);
 
@@ -236,6 +323,7 @@ export class RAGService {
    */
   private createNoResultsResponse(
     query: string,
+    searchQuery: string,
     projectId: string,
     embeddingModel: string,
     processingTime: number,
@@ -246,10 +334,13 @@ export class RAGService {
       citations: [],
       metadata: {
         query,
+        search_query: searchQuery,
         project_id: projectId,
         chunks_retrieved: 0,
         chunks_used: 0,
         avg_similarity: 0,
+        top_similarity: 0,
+        low_confidence: true,
         embedding_model: embeddingModel,
         llm_model: "none",
         processing_time_ms: processingTime,

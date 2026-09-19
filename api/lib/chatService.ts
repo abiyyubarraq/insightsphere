@@ -112,6 +112,8 @@ export class ChatService {
             chunks_retrieved: ragResult.metadata.chunks_retrieved,
             chunks_used: ragResult.metadata.chunks_used,
             avg_similarity: ragResult.metadata.avg_similarity,
+            top_similarity: ragResult.metadata.top_similarity,
+            low_confidence: ragResult.metadata.low_confidence,
             processing_time_ms: ragResult.metadata.processing_time_ms,
             llm_model: ragResult.metadata.llm_model,
             embedding_model: ragResult.metadata.embedding_model,

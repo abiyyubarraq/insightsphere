@@ -25,6 +25,14 @@
   import RightSidebar from './RightSidebar.svelte';
   import MainContent from './MainContent.svelte';
   import FileLibraryModal from './FileLibraryModal.svelte';
+  import { FILE_CONSTRAINTS } from '../../../../../shared/constants/index';
+
+  // What the picker offers and what the guard below accepts are the same list,
+  // and the API enforces the same limits again because an upload goes straight
+  // to Supabase Storage and can skip this code entirely.
+  const acceptedExtensions = FILE_CONSTRAINTS.ALLOWED_EXTENSIONS.map(
+    (ext) => '.' + ext
+  ).join(',');
 
   // State management
   let newProjectName = $state('');
@@ -168,8 +176,8 @@
     // Validate all files first
     // .doc is deliberately absent: it is a different, binary format that the
     // parser cannot read, and accepting it only fails after the upload.
-    const allowedTypes = ['.pdf', '.docx', '.txt', '.md'];
-    const maxSize = 100 * 1024 * 1024; // 100MB in bytes
+    const allowedTypes = FILE_CONSTRAINTS.ALLOWED_EXTENSIONS.map((ext) => '.' + ext);
+    const maxSize = FILE_CONSTRAINTS.MAX_FILE_BYTES;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -527,7 +535,7 @@
   type="file"
   bind:this={fileInput}
   onchange={handleFileUpload}
-  accept=".pdf,.docx,.txt,.md"
+  accept={acceptedExtensions}
   multiple
   class="hidden"
 />

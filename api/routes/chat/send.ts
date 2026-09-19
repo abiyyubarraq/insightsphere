@@ -17,6 +17,7 @@ import { supabaseService } from "../../lib/supabaseClient.ts";
 import { ragService } from "../../lib/ragService.ts";
 import { ChatService } from "../../lib/chatService.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
+import type { HistoryTurn } from "../../lib/queryRewrite.ts";
 import type {
   SendMessageRequest,
   SendMessageResponse,
@@ -93,8 +94,10 @@ export async function sendChatMessage(c: Context) {
       console.log(`📝 Created new conversation: ${conversationId}`);
     }
 
-    // Get conversation history if requested
+    // Get conversation history if requested. Fetched before the current
+    // message is saved, so the question being asked is not in its own history.
     let conversationContext = "";
+    let conversationTurns: HistoryTurn[] = [];
     const useHistory = options.use_conversation_history !== false; // Default true
 
     if (useHistory) {
@@ -108,6 +111,14 @@ export async function sendChatMessage(c: Context) {
         conversationContext = chatService.buildConversationalContext(
           recentMessages,
         );
+        // The same history in two shapes: formatted prose for the answering
+        // model, turns for the query rewrite that retrieval depends on.
+        conversationTurns = recentMessages
+          .filter((message) => message.role !== "system")
+          .map((message) => ({
+            role: message.role as HistoryTurn["role"],
+            content: message.content,
+          }));
         console.log(
           `🔄 Including ${recentMessages.length} previous messages for context`,
         );
@@ -129,6 +140,7 @@ export async function sendChatMessage(c: Context) {
       use_short_context: false,
       max_context_length: 4000,
       conversation_history: conversationContext, // Pass to RAG service
+      conversation_turns: conversationTurns, // Used to rewrite the query before retrieval
     };
 
     const ragResult = await ragService.queryProject(

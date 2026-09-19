@@ -4,6 +4,7 @@ import type {
   SendMessageRequest,
   SendMessageResponse,
 } from '../../../shared/types/chat';
+import { RETRIEVAL_DEFAULTS } from '../../../shared/constants/index';
 import type { Project, ProjectFile } from '../stores/project';
 import type { ListFilesResponse } from '../../../shared/types/index';
 
@@ -28,9 +29,11 @@ export const sendChatMessage = async (
   const request: SendMessageRequest = {
     message,
     conversation_id: conversationId,
+    // These used to be hardcoded here at 20 and 0.25, which meant the API
+    // defaults were never once used by the path that matters.
     options: options || {
-      max_chunks: 20,
-      similarity_threshold: 0.25,
+      max_chunks: RETRIEVAL_DEFAULTS.maxChunks,
+      similarity_threshold: RETRIEVAL_DEFAULTS.threshold,
       use_conversation_history: true,
       max_history_messages: 10,
     },
@@ -335,7 +338,7 @@ export const searchFiles = async (
     offset?: number;
     projectIds?: string[];
     searchQuery?: string;
-    searchMode?: 'filename' | 'semantic' | 'typesense';
+    searchMode?: 'filename' | 'semantic';
   } = {}
 ): Promise<ListFilesResponse> => {
   const session = await supabase.auth.getSession();
