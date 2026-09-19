@@ -1,654 +1,224 @@
-# InsightSphere - Quick Reference Guide
+# InsightSphere — working notes
 
-**Document Version**: 1.0
-**Last Updated**: 2025-11-29
-**Main Branch**: master
+Upload documents to a project, ask questions about them, get answers with
+citations back to the exact page.
 
----
+[README.md](README.md) explains what the system does and why it is built the way
+it is. This file is the part an agent needs that the README does not say: where
+things live, what the real numbers are, and what not to do.
 
-## 🎯 Project Overview
-
-InsightSphere is a document intelligence platform that enables users to upload documents to projects and interact with AI using advanced RAG (Retrieval-Augmented Generation) technology.
-
-### Current Status
-**Milestone 1 Complete** ✅
-- OCR-based PDF/DOCX processing pipeline
-- Per-project vector storage in Qdrant
-- OpenAI embedding generation (text-embedding-3-small)
-- RAG-powered search and chat
-- Browser-based testing dashboard
-
-### Key Features
-- 📁 **Multi-Project Organization** - Perfect data isolation per project
-- 🔍 **Semantic Search** - Vector-based document retrieval
-- 💬 **AI Chat Interface** - Natural language queries with citations
-- 📄 **OCR Processing** - PDF-to-Image-to-Text extraction
-- 🔒 **Enterprise Security** - User and project-level isolation
+**Trust order:** the code, then `supabase/migrations/` for the schema, then
+README.md, then this file. No other document in this repo is authoritative. If
+something here disagrees with the code, the code is right and this file is a
+bug.
 
 ---
 
-## 🏗️ Architecture Overview
-
-### Monorepo Structure
+## Layout
 
 ```
-insightsphere/
-├── frontend/        # SvelteKit 2 + Svelte 5 app
-├── api/             # Deno 2.5+ + Hono REST API
-├── doc-parser/      # Go 1.24 OCR microservice
-├── shared/          # TypeScript types & utilities
-├── vector-utils/    # Qdrant client helpers
-├── dev/             # Docker Compose for local dev
-└── docker/          # Production deployment configs
+api/            Deno 2.5 + Hono
+  lib/          qdrant, openai, supabase, chunking, retrieval, RAG orchestration
+  routes/       documents, projects, search, chat, searchFiles
+doc-parser/     Go 1.24 OCR service (Gin + pdftoppm + tesseract)
+frontend/       SvelteKit 2 + Svelte 5 runes, TailwindCSS v4 + DaisyUI
+shared/         types and constants used by both the frontend and the API
+supabase/       migrations: schema, RLS, constraints
+dev/            docker compose for local development
+docker/         production compose, Dockerfiles, Caddy
+scripts/        security verification, schema dump
 ```
 
-### Tech Stack Summary
+Running it, changing it, checking it: [dev/README.md](dev/README.md).
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | Svelte 5 + SvelteKit 2 | Modern reactive UI |
-| **Styling** | TailwindCSS v4 + DaisyUI | Utility-first CSS + components |
-| **Icons** | Lucide Svelte | Consistent icon system |
-| **API** | Deno 2.5+ + Hono | Fast REST API server |
-| **Parser** | Go 1.24 + Tesseract | OCR document extraction |
-| **Vector DB** | Qdrant | Semantic search |
-| **Database** | Supabase PostgreSQL | User data + auth |
-| **Storage** | Supabase Storage | File uploads |
-| **AI** | OpenAI GPT + Embeddings | LLM + vector generation |
+| Layer | Technology |
+|---|---|
+| Frontend | Svelte 5 + SvelteKit 2, TailwindCSS v4 + DaisyUI, Lucide icons |
+| API | Deno 2.5+ + Hono |
+| Parser | Go 1.24 + Gin, poppler + Tesseract |
+| Vectors | Qdrant, one collection per project |
+| Database | Supabase Postgres, RLS on every table |
+| Storage | Supabase Storage |
+| AI | OpenAI `text-embedding-3-small` and `gpt-4o-mini` |
 
 ---
 
-## 📁 Directory Structure
+## The numbers that are easy to get wrong
 
-```
-frontend/
-├── src/
-│   ├── lib/
-│   │   └── components/
-│   │       ├── common/              # Shared UI components
-│   │       └── home/                # Main app components
-│   ├── routes/                      # SvelteKit file-based routing
-│   │   ├── +page.svelte            # Landing page
-│   │   ├── project/[id]/           # Dynamic project routes
-│   │   ├── login/ & signup/        # Auth pages
-│   │   └── demo/                    # Demo route
-│   ├── stores/                      # Svelte stores (auth, project)
-│   ├── services/                    # API clients (supabase)
-│   └── app.css                      # Global styles
+Every value below is in the code. Do not copy a number out of this table into
+new code — import it.
 
-api/
-├── lib/                             # Core services
-│   ├── chunkText.ts                # Text chunking (800 tokens, 100 overlap)
-│   ├── embeddingClient.ts          # HuggingFace embeddings (development)
-│   ├── openaiClient.ts             # OpenAI embeddings + chat (production)
-│   ├── qdrantClient.ts             # Vector database operations
-│   ├── ragService.ts               # RAG orchestration
-│   ├── supabaseClient.ts           # Database + storage
-│   └── llmClient.ts                # LLM integrations
-├── routes/                          # API endpoints
-│   ├── documents/process.ts        # Document processing pipeline
-│   ├── documents/generateSummary.ts # AI summarization
-│   ├── search/query.ts             # Vector search
-│   ├── projects/query.ts           # Project-level queries
-│   ├── chat/send.ts                # Conversational RAG
-│   └── test/                        # Testing dashboard
-└── main.ts                          # API server entry point
+| Thing | Value | Where |
+|---|---|---|
+| Collection name | `insightsphere-documents_user_{userId}_project_{projectId}` | `api/lib/qdrantClient.ts` |
+| Collection prefix | `QDRANT_COLLECTION`, default `insightsphere-documents` | `api/lib/config.ts` |
+| Embedding model | `text-embedding-3-small`, 1536 dims, cosine | `shared/constants/index.ts` |
+| Embedding batch size | 20 | `api/lib/openaiClient.ts` |
+| Chunk size | 800 tokens (~3200 chars) | `api/routes/documents/process.ts` |
+| Chunk overlap | **50** tokens, not 100 | same |
+| Sentence preservation | **off** — character splitting, deliberately, for memory | same |
+| Chunks per query | 5 | `shared/constants/index.ts` |
+| Similarity threshold | **0.30** | same |
+| Sufficiency floor | 0.45 | same |
+| Context length cap | 4000 chars | same |
+| Max file size | 100 MB, enforced in the browser *and* in the API | same |
+| Max pages | 1000 | same |
+| Storage bucket | `SUPABASE_STORAGE_BUCKET`, default `anotherbrainfileplayground` | `api/lib/config.ts` |
+| Storage path | `{userId}/{projectId}/{timestamp}_{filename}` | `frontend/src/services/supabase.ts` |
 
-doc-parser/
-├── main.go                          # HTTP server + OCR logic
-├── handlers/                        # PDF/DOCX parsers
-└── utils/                           # Helper functions
-
-shared/
-├── types/                           # TypeScript interfaces
-│   ├── chat.ts                     # Chat message types
-│   └── index.ts                    # Document, project types
-└── constants/                       # Shared constants
-```
+The threshold is low on purpose and has been measured on this corpus. Raising it
+to 0.35 drops real queries: "What is psychological inoculation?" goes from 9
+hits to 0, and the Indonesian phrasing of a question that scores 0.684 in
+English scores 0.399. The cost of keeping it low is that an unanswerable
+question returns weak chunks, which is what the sufficiency floor is for — the
+answer is still given, and flagged.
 
 ---
 
-## 🔑 Key Patterns
+## Endpoints
 
-### 1. Svelte 5 Runes (Frontend)
+Every one needs `Authorization: Bearer <supabase-jwt>`. There is no other way
+in: no admin mode, no shared secret, no test routes.
 
-Svelte 5 introduces "runes" - a new reactive system replacing stores for component-level state.
-
-#### State Management
-```typescript
-// Reactive state (replaces: let count = 0)
-let count = $state(0);
-
-// Derived state (replaces: $: doubled = count * 2)
-let doubled = $derived(count * 2);
-
-// Side effects (replaces: $: { console.log(count) })
-$effect(() => {
-  console.log('Count changed:', count);
-});
-```
-
-#### Component Props
-```typescript
-// Define props with types
-interface Props {
-  userId: string;
-  onComplete?: () => void;
-}
-
-// Use $props() to receive props
-let { userId, onComplete = () => {} } = $props<Props>();
-```
-
-#### Two-Way Binding
-```typescript
-// Parent component
-let {
-  leftSidebarOpen = $bindable(),
-  rightSidebarOpen = $bindable()
-} = $props<{
-  leftSidebarOpen?: boolean;
-  rightSidebarOpen?: boolean;
-}>();
-
-// Child component can modify these values
-```
-
-#### Event Handling
-```svelte
-<!-- Svelte 5: Inline handlers (no 'on:' directive) -->
-<button onclick={handleClick}>Click me</button>
-<input onkeydown={handleKeyDown} />
-```
-
-**Real Example** (from [MainContent.svelte:37-47](frontend/src/lib/components/home/MainContent.svelte#L37-L47)):
-```typescript
-// Chat state with runes
-let chatMessages: ChatMessage[] = $state([]);
-let userInput = $state('');
-let chatLoading = $state(false);
-let chatError = $state('');
-let messagesContainer: HTMLDivElement | undefined = $state();
-
-// Auto-scroll effect
-$effect(() => {
-  if (messagesContainer && chatMessages.length > 0) {
-    messagesContainer?.scrollTo({
-      top: messagesContainer.scrollHeight,
-      behavior: 'smooth',
-    });
-  }
-});
-```
-
-### 2. Deno Import Patterns (API)
-
-#### ES Modules with npm: prefix
-```typescript
-// Deno uses npm: prefix for Node packages
-import { Hono } from "hono";
-import OpenAI from "openai";
-import { QdrantClient } from "qdrant-js";
-```
-
-#### Import Maps (deno.jsonc)
-```jsonc
-{
-  "imports": {
-    "openai": "npm:openai@^4.0.0",
-    "hono": "npm:hono@^4.0.0",
-    "@huggingface/inference": "npm:@huggingface/inference@^4.7.1"
-  }
-}
-```
-
-#### Permissions Model
-```bash
-# Explicit permissions required
-deno run --allow-net --allow-env --allow-read --allow-write main.ts
-```
-
-### 3. Go OCR Patterns (Parser)
-
-#### Gin HTTP Framework
-```go
-// Route definition
-router := gin.Default()
-router.POST("/parse/pdf", handlers.ParsePDF)
-router.POST("/parse/docx", handlers.ParseDOCX)
-```
-
-#### Context for Timeouts
-```go
-// Create context with timeout
-ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
-defer cancel()
-
-// Use context in operations
-result, err := processDocument(ctx, filePath)
-```
-
-#### Goroutines for Parallel Processing
-```go
-// Process PDF pages in parallel
-var wg sync.WaitGroup
-results := make([]PageResult, len(pages))
-
-for i, page := range pages {
-  wg.Add(1)
-  go func(index int, p Page) {
-    defer wg.Done()
-    results[index] = processPage(p)
-  }(i, page)
-}
-
-wg.Wait()
-```
-
-### 4. RAG Pipeline Flow
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 1. Document Upload (Frontend → Supabase Storage)               │
-└────────────────────────┬────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 2. Process Request (API: POST /v1/documents/process)           │
-│    - Validate user & project access                            │
-│    - Download file from storage (service key)                  │
-└────────────────────────┬────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 3. OCR Extraction (Go Parser: POST /parse/pdf)                 │
-│    - PDF → Images (poppler-utils)                              │
-│    - Images → Text (Tesseract OCR)                             │
-│    - Returns: { text, pages[], metadata }                      │
-└────────────────────────┬────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 4. Text Chunking (chunkText.ts)                                │
-│    - Chunk size: 800 tokens                                    │
-│    - Overlap: 100 tokens                                       │
-│    - Preserve sentence boundaries                              │
-│    - Maintain page metadata                                    │
-└────────────────────────┬────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 5. Embedding Generation (openaiClient.ts)                      │
-│    - Model: text-embedding-3-small                             │
-│    - Dimensions: 1536                                           │
-│    - Batch processing for efficiency                           │
-│    - NO FALLBACK (consistency required)                        │
-└────────────────────────┬────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 6. Vector Storage (qdrantClient.ts)                            │
-│    - Collection: insightsphere_user_{userId}_project_{projId}  │
-│    - Store: vectors + content + metadata                       │
-│    - Metadata: documentId, projectId, userId, pageNumber, etc. │
-└────────────────────────┬────────────────────────────────────────┘
-                         ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ 7. Status Update (Supabase)                                    │
-│    - Set document status: "ready"                              │
-│    - Store processing metadata (chunks, tokens, timing)        │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 5. Qdrant Collection Strategy
-
-**Per-Project Isolation** (Current Implementation):
-```typescript
-// Collection naming convention
-Collection: `insightsphere_user_{userId}_project_{projectId}`
-
-// Example
-"insightsphere_user_a1b2c3_project_x7y8z9"
-
-// Benefits
-✅ Perfect data isolation
-✅ Easier to delete project data
-✅ Better for multi-tenancy
-✅ Clearer access control
-
-// Trade-offs
-⚠️ More collections to manage
-⚠️ Cannot search across projects
-```
-
-**Collection Configuration**:
-```typescript
-{
-  vectors: {
-    size: 1536,              // OpenAI text-embedding-3-small
-    distance: "Cosine"       // Similarity metric
-  }
-}
-```
-
-### 6. Text Chunking Configuration
-
-**From** [chunkText.ts:189-193](api/lib/chunkText.ts#L189-L193):
-```typescript
-const textChunks = chunkPages(pageContents, {
-  maxChunkSize: 800,         // Target tokens per chunk
-  overlap: 100,              // Token overlap between chunks
-  preserveSentences: true    // Keep sentences intact
-});
-```
-
-**Why These Values?**
-- **800 tokens**: Balances context vs. precision (fits in 4K context window ~5 chunks)
-- **100 overlap**: Prevents information loss at chunk boundaries
-- **Sentence preservation**: Maintains semantic coherence
-
-### 7. Embedding Strategy
-
-**CRITICAL**: Embedding consistency is essential for RAG to work.
-
-**Production Strategy** (from [process.ts:202-232](api/routes/documents/process.ts#L202-L232)):
-```typescript
-// ALWAYS use OpenAI for production
-const embeddingModel = "text-embedding-3-small";
-const embeddings = await openaiClient.generateBatchEmbeddings(
-  chunkTexts,
-  "text-embedding-3-small"  // 1536 dimensions
-);
-
-// NO FALLBACK allowed
-// Documents and queries MUST use the same model
-// Dimension mismatch = zero search results
-```
-
-**Why No Fallback?**
-- Query embeddings must match document embeddings
-- Different models = different dimensions = incompatible
-- Better to fail than to create unusable data
+| Method | Path |
+|---|---|
+| `POST` | `/v1/documents/process` — returns **202**, work runs in the background |
+| `POST` | `/v1/documents/generateSummary` |
+| `DELETE` | `/v1/documents/:documentId` |
+| `POST` | `/v1/projects/:projectId/chat` — conversational RAG |
+| `POST` | `/v1/projects/:projectId/query` — one-shot, no history |
+| `GET` | `/v1/projects/:projectId/query/suggestions` |
+| `DELETE` | `/v1/projects/:projectId` |
+| `POST` | `/v1/search/query` — raw chunks, no generation |
+| `POST` | `/v1/searchFiles` — file library, filename or semantic |
+| `GET` | `/health` |
 
 ---
 
-## 🔧 Common Tasks
+## Ingestion
 
-### Start Development Environment
-
-```bash
-# Option 1: Docker Compose (recommended)
-cd dev
-docker compose up -d
-
-# Option 2: Manual startup
-# Terminal 1: Start Qdrant
-docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
-
-# Terminal 2: Start Go parser
-cd doc-parser
-go run main.go
-
-# Terminal 3: Start API
-cd api
-deno task dev
-
-# Terminal 4: Start frontend
-cd frontend
-npm run dev
+```
+upload to Supabase Storage, insert project_files row
+        |
+POST /v1/documents/process  -> 202 immediately, client polls status
+        |
+   background: ownership check, download by the path ON THE ROW
+        |
+   doc-parser: PDF -> greyscale PNG per page -> tesseract
+               DOCX -> word/document.xml     (no OCR)
+               txt/md -> read as-is           (no OCR)
+        |
+   chunk per page, 800 tokens, 50 overlap
+        |
+   embed in batches of 20, text-embedding-3-small
+        |
+   delete existing points for the document, then upsert
+        |
+   status: ready, or failed with processing_error set
 ```
 
-### Access Services
+Chunk IDs are a UUID v5 over `documentId_page_chunkIndex`. Qdrant upserts by
+point ID, so reprocessing replaces rather than appends. This is load-bearing:
+when the ID was random, 43% of the vector store became duplicates.
 
-- **Frontend**: http://localhost:5173
-- **API**: http://localhost:8000
-- **Test Dashboard**: http://localhost:8000/v1/test/dashboard
-- **Qdrant UI**: http://localhost:6333/dashboard
-- **Go Parser**: http://localhost:8080
+## Answering
 
-### Testing the RAG Pipeline
-
-```bash
-# 1. Process a document
-curl -X POST http://localhost:8000/v1/documents/process \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "project-uuid",
-    "document_id": "document-uuid",
-    "storage_path": "userId/projectId/filename.pdf"
-  }'
-
-# 2. Search documents
-curl -X POST http://localhost:8000/v1/search/query \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "What are the key findings?",
-    "project_id": "project-uuid",
-    "limit": 5
-  }'
-
-# 3. Chat with documents
-curl -X POST http://localhost:8000/v1/chat/send \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "project_id": "project-uuid",
-    "message": "Summarize the main conclusions",
-    "conversation_id": "optional-conversation-uuid"
-  }'
 ```
+first turn                    follow-up turn
+  question                      question ------------------+
+     |                             |                        |
+     |                             +-> rewrite (gpt-4o-mini,|
+     |                                 temp 0, 1.5s, falls  |
+     |                                 back to original)    |
+     |                                        |             |
+  embed                                 embed both ---------+
+     |                                        |
+  search                             search twice, fuse by RRF
+     |                                        |
+     +------------> drop duplicate passages <-+
+                             |
+                    top k, ordered by score
+                             |
+                 [doc_id: N] context -> gpt-4o-mini
+```
+
+Order matters at the end. `citationService.buildContext` numbers chunks in the
+order it is given them, the model cites `[doc_id: N]`, and the frontend maps `N`
+back to the Nth citation by position. Both the chat route and the history reload
+sort citations by score, so the list handed to `buildContext` must be in score
+order too. `api/lib/retrieval.ts` does that after fusion, and a test pins it.
 
 ---
 
-## 🎨 Styling with TailwindCSS + DaisyUI
+## What not to do
 
-### DaisyUI Theme Tokens
+**Never add an embedding fallback.** Documents and queries must be embedded by
+the same model or search returns nothing. A second provider means different
+dimensions. Failing loudly is the cheaper outcome. There is no
+`embeddingClient.ts` and there should not be one again.
 
-```svelte
-<!-- Use theme tokens instead of hardcoded colors -->
-<button class="btn btn-primary">Primary Button</button>
-<div class="bg-base-100 text-base-content">Content</div>
-<div class="border-primary bg-primary/10">Subtle primary</div>
+**Never log document text.** IDs, lengths and counts only.
+
+```ts
+console.log("Processing document:", { documentId, fileName, textLength, chunkCount });
 ```
 
-### Custom Theme (tailwind.config.js)
+**Never trust a path from the request body.** Read `storage_path` off the
+document row. The API holds the service-role key, which bypasses RLS, so it has
+to check ownership itself — `supabaseService.userHasProjectAccess` before
+anything else.
 
-```javascript
-daisyui: {
-  themes: [
-    {
-      insightsphere: {
-        primary: "#7C3AED",      // Purple
-        secondary: "#10B981",    // Green
-        accent: "#F59E0B",       // Amber
-        neutral: "#1F2937",      // Dark gray
-        "base-100": "#0F172A",   // Very dark blue
-        info: "#3ABFF8",
-        success: "#36D399",
-        warning: "#FBBD23",
-        error: "#F87272",
-      },
-    },
-  ],
-}
-```
+**Never let a collection be recreated to fix a dimension mismatch.** That
+deletes every document in the project. `ensureCollection` throws instead.
+Changing embedding model is a migration, not a side effect.
+
+**Always search with `useProjectCollection: true`** and pass both `userId` and
+`projectId`. Collections are per project; getting this wrong is how one tenant
+sees another.
+
+**Do not put a number in the answer prompt that is not in the context.** The
+system prompt forbids arithmetic, and `buildContext` deliberately emits no
+similarity scores — if a number is not in the context, the model cannot restate
+it.
+
+**Stack:** Deno for the API, TypeScript everywhere, Svelte 5 runes, Go for the
+parser, DaisyUI for components. Not Node, not Python, not plain JavaScript, not
+another UI library.
+
+**TypeScript is strict** in both `api/deno.jsonc` and `frontend/tsconfig.json`.
+CI runs `deno check`, `deno lint`, `svelte-check` and `eslint`; a missing
+`await` sat in master for months because nothing type-checked the API.
 
 ---
 
-## 🚫 Critical Constraints
+## Conventions
 
-### 1. Embedding Consistency (CRITICAL ⚠️)
-```typescript
-// ❌ NEVER mix embedding models
-// Documents processed with text-embedding-3-small
-// Queries must also use text-embedding-3-small
+**Frontend** uses the `$lib` alias, Svelte 5 runes (`$state`, `$derived`,
+`$effect`, `$props`, `$bindable`), and plain `onclick` handlers — no `on:`
+directives. Inline handlers in generated HTML are forbidden: the CSP has no
+`unsafe-inline` for scripts, so citation chips use `data-` attributes and one
+delegated listener.
 
-// ✅ Correct
-const queryEmbedding = await openaiClient.generateEmbedding({
-  text: query,
-  model: "text-embedding-3-small"  // MUST match documents
-});
+**Theme** lives in `frontend/src/app.css` as a Tailwind v4
+`@plugin "daisyui/theme"` block, in oklch. There is no `tailwind.config.js`;
+Tailwind v4 is configured from CSS. Use DaisyUI tokens (`btn-primary`,
+`bg-base-100`, `text-warning`), never hex.
 
-// ❌ Wrong - will return zero results
-const queryEmbedding = await embeddingClient.generateHuggingFaceEmbedding(query);
-// Different model = different dimensions = incompatible
-```
+**API** uses relative imports with explicit `.ts` extensions, and bare
+specifiers from the import map in `api/deno.jsonc` for npm and JSR packages.
+Shared code is `../../shared/...`.
 
-### 2. No Full Document Logging
-```typescript
-// ❌ Never log full document content
-console.log("Processing document:", fullDocumentText);  // BAD
-
-// ✅ Log IDs and summaries only
-console.log("Processing document:", {
-  documentId,
-  fileName,
-  textLength: text.length,
-  chunkCount: chunks.length
-});
-```
-
-### 3. File Size Limits
-```typescript
-// Prevent uploads >100MB early
-// Both frontend validation AND backend validation
-const MAX_FILE_SIZE = 100 * 1024 * 1024;  // 100MB
-
-if (file.size > MAX_FILE_SIZE) {
-  throw new Error("File size exceeds 100MB limit");
-}
-```
-
-### 4. TypeScript Strict Mode
-```json
-// deno.jsonc & tsconfig.json
-{
-  "compilerOptions": {
-    "strict": true,           // Enable all strict checks
-    "noImplicitAny": true,    // No implicit 'any' types
-    "strictNullChecks": true  // Null safety
-  }
-}
-```
-
-### 5. Technology Stack Constraints
-```typescript
-// ❌ Do NOT suggest
-- Python solutions
-- Node.js (use Deno)
-- JavaScript (use TypeScript)
-- Different UI libraries (use DaisyUI)
-
-// ✅ ONLY use
-- Deno 2.5+ (API)
-- TypeScript (Frontend + API)
-- Svelte 5 + SvelteKit 2 (Frontend)
-- Go 1.24+ (Parser)
-- TailwindCSS v4 + DaisyUI (Styling)
-```
-
-### 6. User Isolation
-```typescript
-// ALWAYS validate user ownership
-// Before processing ANY operation
-
-// ✅ Correct
-const document = await supabaseService.getDocument(documentId, userId);
-const hasAccess = await supabaseService.validateProjectAccess(projectId, userId);
-
-// ❌ Wrong - no user validation
-const document = await supabaseService.getDocumentAsAdmin(documentId);
-```
-
-### 7. Collection Management
-```typescript
-// ALWAYS use per-project collections
-// ALWAYS include userId + projectId in metadata
-// ALWAYS filter by projectId in searches
-
-await qdrantService.upsertChunks(chunks, {
-  useProjectCollection: true  // Required
-});
-
-const results = await qdrantService.searchSimilar(queryVector, {
-  userId,                     // Required
-  projectId,                  // Required for filtering
-  useProjectCollection: true  // Required
-});
-```
+**Tests** are flat `Deno.test("sentence-style name", ...)` with `@std/assert`,
+a comment above each saying which bug it prevents, and plain object factories
+instead of mocks. Modules that construct a client at import time cannot be
+tested, so pure logic goes in its own module — see `api/lib/retrieval.ts` and
+`api/lib/queryRewrite.ts`.
 
 ---
 
-## 🔗 Path Aliases & Imports
+## Agents
 
-### Frontend (SvelteKit)
-```typescript
-// $lib alias configured in svelte.config.js
-import { MyComponent } from '$lib/components/common/MyComponent.svelte';
-import { authStore } from '$lib/stores/auth';
-import { myService } from '$lib/services/myService';
-```
-
-### API (Deno)
-```typescript
-// Relative imports (no path aliases in Deno)
-import { qdrantService } from "../lib/qdrantClient.ts";
-import { openaiClient } from "../lib/openaiClient.ts";
-
-// NPM packages use npm: prefix
-import { Hono } from "hono";
-import OpenAI from "openai";
-```
-
-### Go (Parser)
-```go
-// Module imports
-import (
-  "github.com/gin-gonic/gin"
-  "insightsphere/doc-parser/handlers"
-  "insightsphere/doc-parser/utils"
-)
-```
-
----
-
-## 📚 Additional Resources
-
-For deeper documentation, see:
-
-- **Architecture Deep Dive**: [context/architecture.md](context/architecture.md)
-- **RAG Pipeline Details**: [context/rag-pipeline.md](context/rag-pipeline.md)
-- **Embedding Strategy**: [context/embedding-strategy.md](context/embedding-strategy.md)
-- **Qdrant Patterns**: [context/qdrant.md](context/qdrant.md)
-- **Design Principles**: [context/design-principles.md](context/design-principles.md)
-- **Svelte 5 Patterns**: [context/svelte5-patterns.md](context/svelte5-patterns.md)
-- **Deno Conventions**: [context/deno-conventions.md](context/deno-conventions.md)
-- **Go Patterns**: [context/go-patterns.md](context/go-patterns.md)
-- **Supabase Integration**: [context/supabase.md](context/supabase.md)
-- **Multi-Service Coordination**: [context/multiservice.md](context/multiservice.md)
-- **Project Overview**: [context/overview.md](context/overview.md)
-
-### Development Guides
-
-- **Startup Guide**: [dev/STARTUP_GUIDE.md](dev/STARTUP_GUIDE.md)
-- **Testing Guide**: [dev/TESTING_GUIDE.md](dev/TESTING_GUIDE.md)
-- **Troubleshooting**: [dev/TROUBLESHOOTING.md](dev/TROUBLESHOOTING.md)
-- **Processing Pipeline**: [api/README_PROCESSING.md](api/README_PROCESSING.md)
-
----
-
-## 🤖 Claude Code Agents
-
-Specialized AI agents are available in [.claude/agents/](.claude/agents/) for specific tasks:
-
-- **code-reviewer** - Code quality assurance
-- **design-reviewer** - Architecture validation
-- **planning-specialist** - Feature breakdown & coordination
-- **research-specialist** - Technical research & investigation
-- **senior-developer** - Full-stack implementation
-- **ui-specialist** - Frontend development & UI/UX
-- **rag-specialist** - RAG pipeline optimization
-- **embedding-specialist** - Vector & embedding expertise
-- **go-service-specialist** - Go microservice development
-- **microservices-coordinator** - Multi-service orchestration
-
----
-
-**Built with ❤️ for intelligent document processing**
+Task-specific playbooks live in [.claude/agents/](.claude/agents/):
+code-reviewer, design-reviewer, planning-specialist, research-specialist,
+senior-developer, ui-specialist, rag-specialist, embedding-specialist,
+go-service-specialist, microservices-coordinator.

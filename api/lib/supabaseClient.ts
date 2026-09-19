@@ -262,11 +262,15 @@ export class SupabaseService {
   }
 
   /**
-   * Create a temporary file for processing
+   * Create a temporary file for processing.
+   *
+   * /tmp is the shared_temp volume, mounted into both this container and
+   * doc-parser (dev/compose.yaml). That is why the parser is handed a bare
+   * filesystem path instead of the file bytes. The insightsphere_ prefix is
+   * load-bearing: cleanupTempFile refuses to delete a directory without it.
    */
   async createTempFile(data: Uint8Array, fileName: string): Promise<string> {
     try {
-      // Use shared /tmp directory that's mounted in both API and doc-parser containers
       const timestamp = Date.now();
       const randomId = Math.random().toString(36).substring(2, 15);
       const tempDir = `/tmp/insightsphere_${timestamp}_${randomId}`;
