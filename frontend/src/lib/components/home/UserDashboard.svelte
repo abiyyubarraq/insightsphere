@@ -55,6 +55,34 @@
 
   // File processing state
   let processingFileLoading: Record<string, boolean> = $state({});
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const anyProcessing = () => uploadedFiles.some((f) => f.status === 'processing');
+
+  /**
+   * Processing runs in the background now, so the only way to learn the outcome
+   * is to ask. Polls while at least one file is still going and stops otherwise.
+   */
+  const pollWhileProcessing = () => {
+    clearTimeout(pollTimer);
+    if (!anyProcessing()) return;
+
+    pollTimer = setTimeout(async () => {
+      const project = $selectedProject;
+      if (!project || !$user) return;
+      try {
+        uploadedFiles = await getProjectFiles(project.id, $user.id);
+      } catch {
+        // A failed poll is not worth surfacing; the next one will retry.
+      }
+      pollWhileProcessing();
+    }, 3000);
+  };
+
+  $effect(() => {
+    if (anyProcessing()) pollWhileProcessing();
+    return () => clearTimeout(pollTimer);
+  });
   let generatingSummaryLoading: Record<string, boolean> = $state({});
 
   // Summary modal state
@@ -258,15 +286,10 @@
 
     await withLoading(
       async () => {
-        const result = await processDocument($selectedProject.id, file.id, file.storage_path);
-
-        if (result.success) {
-          // Refresh the files list to show updated status
-          const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
-          uploadedFiles = updatedFiles;
-        } else {
-          throw new Error(result.error || 'Processing failed');
-        }
+        await processDocument($selectedProject.id, file.id, file.storage_path);
+        // Returns 202; the status arrives through polling.
+        uploadedFiles = await getProjectFiles($selectedProject.id, $user.id);
+        pollWhileProcessing();
       },
       (loadingState) => {
         processingFileLoading[fileId] = loadingState;
@@ -288,19 +311,9 @@
 
     await withLoading(
       async () => {
-        const result = await processDocument($selectedProject.id, file.id, file.storage_path);
-
-        if (result.success) {
-          // Refresh the files list to show updated status
-          const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
-          uploadedFiles = updatedFiles;
-
-          console.log(
-            `Document retry processed successfully: ${result.chunks_created} chunks created in ${result.processing_time_ms}ms`
-          );
-        } else {
-          throw new Error(result.error || 'Retry processing failed');
-        }
+        await processDocument($selectedProject.id, file.id, file.storage_path);
+        uploadedFiles = await getProjectFiles($selectedProject.id, $user.id);
+        pollWhileProcessing();
       },
       (loadingState) => {
         processingFileLoading[fileId] = loadingState;

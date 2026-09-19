@@ -3,7 +3,10 @@ import type {
   DocumentProcessRequest,
   DocumentProcessResponse,
 } from "../../../shared/types/index.ts";
-import { supabaseService } from "../../lib/supabaseClient.ts";
+import {
+  type DocumentRecord,
+  supabaseService,
+} from "../../lib/supabaseClient.ts";
 import { openaiClient } from "../../lib/openaiClient.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import {
@@ -89,9 +92,56 @@ export async function processDocument(c: Context) {
       );
     }
 
-    // Update document status to processing
-    await supabaseService.updateDocument(document_id, { status: "processing" });
+    await supabaseService.updateDocument(document_id, {
+      status: "processing",
+      processing_error: null,
+    });
 
+    // OCR plus embedding runs for minutes on a large file. Holding the request
+    // open for that long does not survive any proxy, and the browser had no
+    // other way to learn the outcome, so a timeout left the row stuck in
+    // "processing" with no route back. The client now polls the document's
+    // status instead.
+    runPipeline(document_id, project_id, user.id, document).catch((error) => {
+      console.error(`Pipeline crashed for ${document_id}:`, error);
+    });
+
+    return c.json(
+      {
+        success: true,
+        document_id,
+        status: "processing",
+      },
+      202,
+    );
+  } catch (error) {
+    console.error("Could not start processing:", error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      } as DocumentProcessResponse,
+      500,
+    );
+  }
+}
+
+/**
+ * The long-running half: OCR, chunk, embed, index.
+ *
+ * Runs detached from the request. Every exit path must write a terminal status,
+ * or the document is stranded in "processing".
+ */
+async function runPipeline(
+  document_id: string,
+  project_id: string,
+  userId: string,
+  document: DocumentRecord,
+): Promise<void> {
+  const startTime = Date.now();
+  let tempFilePath: string | null = null;
+
+  try {
     // Download file from Supabase Storage
     console.log(`Downloading file: ${document.storage_path}`);
     const fileData = await supabaseService.downloadFile(document.storage_path);
@@ -165,7 +215,7 @@ export async function processDocument(c: Context) {
           console.log(`  📖 Reading PNG from: ${tempPath}`);
           const imageData = await Deno.readFile(tempPath);
           console.log(`  📦 Read ${imageData.length} bytes`);
-          const storagePath = `${user.id}/${project_id}/images/${document_id}/page-${pageNum}.png`;
+          const storagePath = `${userId}/${project_id}/images/${document_id}/page-${pageNum}.png`;
           const uploadedPath = await supabaseService.uploadFile(
             imageData,
             storagePath,
@@ -229,7 +279,7 @@ export async function processDocument(c: Context) {
     parseResult.text = "";
 
     try {
-      await qdrantService.deleteByDocumentId(document_id, user.id, project_id);
+      await qdrantService.deleteByDocumentId(document_id, userId, project_id);
     } catch (purgeError) {
       console.warn("Could not clear previous chunks:", purgeError);
     }
@@ -306,7 +356,7 @@ export async function processDocument(c: Context) {
           metadata: {
             documentId: document_id,
             projectId: project_id,
-            userId: user.id,
+            userId: userId,
             pageNumber: chunk.pageNumber,
             chunkIndex: globalChunkIndex + index,
             fileName: document.file_name,
@@ -356,7 +406,13 @@ export async function processDocument(c: Context) {
       tempFilePath = null;
     }
 
-    // Update document metadata and status
+    if (storedChunkCount === 0) {
+      throw new Error(
+        `No text could be extracted from this document (${totalPages} pages read, 0 chunks produced). ` +
+          `It may be a scanned file at a resolution OCR cannot read.`,
+      );
+    }
+
     const updatedMetadata = {
       ...(document.metadata || {}),
       chunkCount: storedChunkCount,
@@ -369,23 +425,17 @@ export async function processDocument(c: Context) {
 
     await supabaseService.updateDocument(document_id, {
       status: "ready",
+      processing_error: null,
       metadata: updatedMetadata,
       image_paths: imagePaths,
     });
 
-    const processingTime = Date.now() - startTime;
-    console.log(`Document processing completed in ${processingTime}ms`);
-
-    return c.json({
-      success: true,
-      document_id,
-      chunks_created: storedChunkCount,
-      processing_time_ms: processingTime,
-    } as DocumentProcessResponse);
+    console.log(
+      `Document ${document_id} ready in ${Date.now() - startTime}ms`,
+    );
   } catch (error) {
-    console.error("Document processing failed:", error);
+    console.error(`Processing failed for ${document_id}:`, error);
 
-    // Clean up temporary file if it exists
     if (tempFilePath) {
       try {
         await supabaseService.cleanupTempFile(tempFilePath);
@@ -394,30 +444,11 @@ export async function processDocument(c: Context) {
       }
     }
 
-    // Update document status to failed if we have the document_id
-    try {
-      const body = await c.req.json();
-      const { document_id } = body;
-      if (document_id) {
-        await supabaseService.updateDocument(document_id, { status: "failed" });
-      }
-    } catch {
-      // Ignore errors in error handler
-    }
-
-    const processingTime = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error occurred";
-
-    return c.json(
-      {
-        success: false,
-        document_id: "",
-        chunks_created: 0,
-        processing_time_ms: processingTime,
-        error: errorMessage,
-      } as DocumentProcessResponse,
-      500
-    );
+    await supabaseService.updateDocument(document_id, {
+      status: "failed",
+      processing_error: error instanceof Error
+        ? error.message
+        : "Unknown error",
+    }).catch((e) => console.error("Could not record failure:", e));
   }
 }
