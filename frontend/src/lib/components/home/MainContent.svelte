@@ -376,7 +376,7 @@
 
                     <!-- The API decides what counts as weak, so the floor
                          lives in one place and history keeps the flag. -->
-                    {#if message.role === 'assistant' && message.metadata?.low_confidence && message.content}
+                    {#if message.role === 'assistant' && message.metadata?.low_confidence && message.citations?.length}
                       <div class="mt-3 flex items-start gap-2 text-xs text-warning">
                         <TriangleAlert class="w-4 h-4 shrink-0" />
                         <span>
