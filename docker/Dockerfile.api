@@ -1,0 +1,41 @@
+# Build context is the repo root: the API imports types from shared/.
+FROM denoland/deno:2.5.2
+
+WORKDIR /app
+
+# Dependency manifests first so a source-only change reuses the cached layer.
+COPY api/deno.jsonc api/deno.lock ./
+COPY shared /shared
+
+COPY api .
+
+# Routes are loaded with dynamic import() so env validation can run before the
+# service clients construct themselves. deno cache does not follow those, so
+# name them, otherwise the first request of each kind downloads at runtime.
+RUN deno cache --lock=deno.lock \
+      main.ts \
+      routes/documents/process.ts \
+      routes/documents/generateSummary.ts \
+      routes/documents/remove.ts \
+      routes/search/query.ts \
+      routes/projects/query.ts \
+      routes/projects/remove.ts \
+      routes/chat/send.ts \
+      routes/searchFiles/search.ts
+
+# The image ships a `deno` user. Processing writes page images to a temp dir, so
+# that path has to be writable by it.
+RUN mkdir -p /tmp/insightsphere && chown -R deno:deno /tmp/insightsphere /app
+USER deno
+
+EXPOSE 8000
+
+# --allow-run is deliberately absent: the API shells out to nothing. The parser
+# is a separate service reached over HTTP.
+CMD ["run", \
+     "--allow-net", \
+     "--allow-env", \
+     "--allow-read", \
+     "--allow-write=/tmp", \
+     "--cached-only", \
+     "main.ts"]

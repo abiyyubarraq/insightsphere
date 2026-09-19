@@ -49,7 +49,7 @@ Asking a question embeds it with the *same* model, searches only that project's 
 
 ## Quick start
 
-Needs Docker, Node 20+, a Supabase project and an OpenAI key.
+Needs Docker, Node 22+, a Supabase project and an OpenAI key.
 
 ```bash
 git clone https://github.com/abiyyubarraq/insightsphere.git

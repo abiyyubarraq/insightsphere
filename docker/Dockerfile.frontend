@@ -1,0 +1,50 @@
+# Build context is the repo root: the frontend imports types from shared/.
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# The lock file is written by npm 11, which records nested dependency entries
+# in a way npm 10 resolves differently -- `npm ci` then fails with a spurious
+# "Missing: picomatch from lock file". Pin the major to match whoever generated
+# the lock.
+RUN npm install -g npm@11.14.1
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY shared /shared
+COPY frontend .
+
+# Vite inlines VITE_* at build time, so these are baked into the bundle and
+# cannot be supplied later by the container's environment. Only public values
+# belong here: the anon key is meant to be public, which is why every table has
+# row level security.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ARG VITE_API_URL
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+    VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY \
+    VITE_API_URL=$VITE_API_URL
+
+RUN npm run build
+
+FROM node:22-alpine
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+# adapter-node emits a self-contained server; only production deps are needed
+# to run it.
+RUN npm install -g npm@11.14.1
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=builder /app/build ./build
+
+USER node
+
+EXPOSE 3000
+ENV PORT=3000
+
+CMD ["node", "build/index.js"]

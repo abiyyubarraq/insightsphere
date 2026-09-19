@@ -1,0 +1,119 @@
+# Production stack. Run from the repo root:
+#
+#   docker compose -f docker/docker-compose.prod.yaml --env-file docker/.env.prod up -d --build
+#
+# Only Caddy binds to the host. Qdrant and the parser are reachable on the
+# internal network alone, which is the point: the parser has no authentication
+# of its own, and Qdrant's is a single shared key.
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates; losing this re-issues them
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN}
+    depends_on:
+      - frontend
+      - api
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        # Baked into the bundle at build time, so changing them needs a rebuild.
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_API_URL: ${VITE_API_URL}
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - ORIGIN=https://${DOMAIN}
+    expose:
+      - "3000"
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      - PORT=8000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_STORAGE_BUCKET=${SUPABASE_STORAGE_BUCKET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - DOC_PARSER_URL=http://doc-parser:8080
+      - CORS_ORIGINS=https://${DOMAIN}
+    expose:
+      - "8000"
+    volumes:
+      # The API writes the downloaded file here and the parser reads it back.
+      - shared_temp:/tmp
+    depends_on:
+      - qdrant
+      - doc-parser
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  doc-parser:
+    build:
+      context: ../doc-parser
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - GIN_MODE=release
+      - OCR_LANGUAGES=${OCR_LANGUAGES:-eng+ind}
+      - OCR_DPI=${OCR_DPI:-300}
+    expose:
+      - "8080"
+    volumes:
+      - shared_temp:/tmp
+    # OCR is CPU-bound and will take everything it is given. Capping it leaves
+    # room for the API to keep answering while a document is processing.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    restart: unless-stopped
+    environment:
+      # Without this the collections are readable by anything on the network.
+      - QDRANT__SERVICE__API_KEY=${QDRANT_API_KEY}
+    expose:
+      - "6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  caddy_data:
+  caddy_config:
+  qdrant_data:
+  shared_temp:

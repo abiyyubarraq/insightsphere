@@ -1,23 +1,23 @@
 <script lang="ts">
   import { marked } from 'marked';
+  import DOMPurify from 'isomorphic-dompurify';
 
   let { content } = $props<{
     content: string;
   }>();
 
-  // Function to render markdown content for summaries
-  const renderMarkdown = (content: string): string => {
+  /**
+   * Summaries come straight from the model reading the uploaded file, and the
+   * prompt asks for markdown, so a document can influence what lands here.
+   * marked emits inline HTML verbatim, so sanitise before {@html}.
+   */
+  const renderMarkdown = (raw: string): string => {
     try {
-      const result = marked(content, {
-        breaks: true, // Convert line breaks to <br>
-        gfm: true, // GitHub Flavored Markdown
-      });
-
-      // Handle both string and Promise<string> return types
-      return typeof result === 'string' ? result : content;
+      const result = marked(raw, { breaks: true, gfm: true });
+      return DOMPurify.sanitize(typeof result === 'string' ? result : raw);
     } catch (error) {
       console.error('Markdown rendering error:', error);
-      return content; // Fallback to plain text
+      return DOMPurify.sanitize(raw);
     }
   };
 </script>
