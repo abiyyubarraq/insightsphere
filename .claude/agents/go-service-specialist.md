@@ -99,7 +99,9 @@ func processPDF(ctx context.Context, pdfPath string) ([]Page, error) {
     wg.Add(1)
     go func(pageNum int) {
       defer wg.Done()
-      imagePath := fmt.Sprintf("%s/page-%02d.jpg", imageDir, pageNum)
+      // pdftoppm renders greyscale PNG, not jpg: a third of the bytes for the
+      // same OCR accuracy
+      imagePath := fmt.Sprintf("%s/page-%02d.png", imageDir, pageNum)
       text, err := extractTextFromImage(ctx, imagePath)
       if err != nil {
         log.Printf("Error on page %d: %v", pageNum, err)
@@ -141,5 +143,7 @@ func ParsePDF(c *gin.Context) {
 
 ## Related Resources
 
-- [Go Patterns](../context/go-patterns.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema
 - [CLAUDE.md](../CLAUDE.md)

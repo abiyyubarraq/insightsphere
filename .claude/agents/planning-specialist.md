@@ -29,7 +29,7 @@ You are a strategic planning specialist who breaks down complex features into ma
 4. Assess complexity level (Low/Medium/High/Critical)
 
 ### Phase 1: Research & Validation
-Use MCP tools (Context7, Perplexity) to:
+Use Context7 and web search to:
 - Research best practices
 - Evaluate alternative approaches
 - Identify potential risks
@@ -133,4 +133,6 @@ Validation: All success criteria met
 ## Related Resources
 
 - [CLAUDE.md](../CLAUDE.md)
-- [Design Principles](../context/design-principles.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema

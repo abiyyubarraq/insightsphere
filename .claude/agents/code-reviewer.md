@@ -120,9 +120,10 @@ You are a specialized AI agent focused on code quality assurance, architectural 
 - ✅ Proper cleanup on deletion
 
 **Chunking**:
-- ✅ 800 tokens per chunk (or documented reason for change)
-- ✅ 100 token overlap
-- ✅ Sentence preservation
+- ✅ 800 tokens per chunk, 50 token overlap, character splitting
+- ⚠️ These are the shipped values. Do not flag them as wrong, and do not ask for
+  sentence preservation: it is off on purpose, for memory. Changing any of them
+  means reprocessing every document
 
 **Citations**:
 - ✅ Extract and validate citations
@@ -167,12 +168,12 @@ You are a specialized AI agent focused on code quality assurance, architectural 
 ### Evidence-Based Feedback
 Show code examples:
 ```typescript
-// ❌ Current: Mixing embedding models
-const docEmbedding = await openaiClient.generateEmbedding(chunk);
-const queryEmbedding = await embeddingClient.generateHuggingFaceEmbedding(query);
+// ❌ Wrong: a second provider, or any normalisation the other side does not do
+const docEmbedding = await openaiClient.generateEmbedding({ text: chunk });
+const queryEmbedding = await someOtherProvider.embed(query);
 
-// ✅ Fix: Use same model
-const queryEmbedding = await openaiClient.generateEmbedding(query);
+// ✅ Fix: same model, same normalisation, both sides
+const queryEmbedding = await openaiClient.generateEmbedding({ text: query });
 ```
 
 ### Positive Reinforcement
@@ -186,11 +187,12 @@ Acknowledge good practices:
 ```markdown
 ## Code Review: Document Processing Endpoint
 
-### [Blocker] Embedding Model Inconsistency
-**File**: api/routes/documents/process.ts:210
-**Issue**: Using HuggingFace for query embeddings but OpenAI for document embeddings
-**Impact**: Zero search results due to dimension mismatch (4096 vs 1536)
-**Fix**: Use OpenAI for both
+### [Blocker] Embedding Input Inconsistency
+**File**: api/lib/openaiClient.ts
+**Issue**: The query path normalised its text differently from the document path
+**Impact**: The two halves of the search are built from different text, so
+non-ASCII queries silently retrieve nothing
+**Fix**: Both paths call normalizeForEmbedding and send its result
 
 ### [High-Priority] Missing Error Handling
 **File**: api/lib/qdrantClient.ts:85
@@ -211,7 +213,7 @@ Acknowledge good practices:
 
 ## Related Resources
 
-- [Design Principles](../context/design-principles.md)
-- [RAG Pipeline](../context/rag-pipeline.md)
-- [Qdrant Patterns](../context/qdrant.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema
 - [CLAUDE.md](../CLAUDE.md)

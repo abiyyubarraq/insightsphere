@@ -58,7 +58,7 @@ const response = await fetch(`${parserUrl}/parse/pdf`, {
 
 ### API → Qdrant
 ```typescript
-// gRPC client (singleton)
+// REST over HTTP on 6333 (@qdrant/js-client-rest), not gRPC
 const qdrantClient = new QdrantClient({
   url: Deno.env.get("QDRANT_URL"),
   apiKey: Deno.env.get("QDRANT_API_KEY")
@@ -137,38 +137,37 @@ class CircuitBreaker {
 
 ### API Health Check
 ```typescript
-// GET /health
-export function healthCheck(c: Context) {
-  return c.json({
+// GET /health, as it actually is. Liveness only: it deliberately does not
+// probe Qdrant or Supabase, because a health check that calls out is a health
+// check that fails for someone else reasons.
+app.get("/health", (c) =>
+  c.json({
     status: "healthy",
-    service: "api",
     timestamp: new Date().toISOString(),
-    dependencies: {
-      qdrant: await checkQdrant(),
-      supabase: await checkSupabase(),
-      parser: await checkParser()
-    }
-  });
-}
+    version: "1.0.0",
+  })
+);
 ```
 
 ### Docker Compose Health Checks
 ```yaml
+# The qdrant and deno images ship neither curl nor wget, so a curl healthcheck
+# never passes and the whole stack sits unhealthy. Check the real compose file
+# before copying anything from here.
 services:
   doc-parser:
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      # This image does have wget
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
   api:
-    depends_on:
-      doc-parser:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
+    healthcheck:
+      # No curl, no wget. A successful TCP connect means it is accepting requests
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8000"]
 ```
 
 ## Deployment Coordination
@@ -218,5 +217,7 @@ console.log(JSON.stringify({
 
 ## Related Resources
 
-- [Multi-Service Guide](../context/multiservice.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema
 - [CLAUDE.md](../CLAUDE.md)

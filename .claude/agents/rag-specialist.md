@@ -25,28 +25,33 @@ You are a specialized AI agent focused on RAG (Retrieval-Augmented Generation) p
 ## Specialized Knowledge
 
 ### Text Chunking Algorithms
-- Current: 800 tokens per chunk, 100 token overlap
-- Sentence preservation: Split on `(?<=[.!?])\s+`
+- Current: 800 tokens per chunk, 50 token overlap
+- Character splitting, not sentence splitting. Deliberate, for memory: the
+  sentence path exists but is never reached in production
 - Page-aware chunking for citation accuracy
 - Token estimation: ~4 chars per token (English)
 
 ### Embedding Generation
 - **CRITICAL**: OpenAI text-embedding-3-small (1536 dims) only
 - NO fallback to different models (dimension mismatch = zero results)
-- Batch processing: 100 texts per API call
+- Batch processing: 20 texts per API call
 - Cost: $0.02 per 1M tokens (~$0.00065 per 50-page document)
 
 ### Vector Search Optimization
 - Collection strategy: Per-project isolation
-- Format: `insightsphere_user_{userId}_project_{projectId}`
+- Format: `insightsphere-documents_user_{userId}_project_{projectId}`
 - Distance metric: Cosine similarity
-- Optimal threshold: 0.7 for relevance, 0.85+ for high precision
-- Result limit: 10 chunks (fits in 4K context window with overhead)
+- Threshold: **0.30**, measured on this corpus. A well-matched question tops out
+  at 0.66-0.68, and questions the corpus genuinely answers can top out at 0.34.
+  Raising the threshold drops those before it drops irrelevant results
+- Sufficiency floor: 0.45. Below it the answer is given and flagged as a weak
+  match, not refused
+- Result limit: 5 chunks, capped at 4000 characters of context
 
 ### Context Window Management
 - GPT-4o-mini: 128K tokens
 - GPT-3.5-turbo: 16K tokens
-- Target context: ~8K tokens (10 chunks × 800 tokens)
+- Target context: 4000 characters (5 chunks, trimmed)
 - Leave room for: System prompt, conversation history, response
 
 ### Prompt Engineering for RAG
@@ -122,11 +127,12 @@ Based on diagnosis, recommend specific fixes:
 
 **Chunking Optimization**:
 ```typescript
-// Increase chunk size for more context
+// The shipped configuration. Changing it means reprocessing every document,
+// because chunk boundaries move and the stored chunk IDs no longer line up.
 const textChunks = chunkPages(pageContents, {
-  maxChunkSize: 1000,  // Up from 800
-  overlap: 150,        // Up from 100
-  preserveSentences: true
+  maxChunkSize: 800,
+  overlap: 50,
+  preserveSentences: false
 });
 ```
 
@@ -270,10 +276,11 @@ results.forEach((result, i) => {
 4. Threshold too low (irrelevant results included)
 
 **Solutions**:
-- Increase chunk size (800 → 1000 tokens)
-- Increase overlap (100 → 150 tokens)
-- Query expansion with synonyms
-- Raise threshold (0.7 → 0.75 or 0.8)
+- Check the query was contextualised. A follow-up embedded raw retrieves nothing
+- Check for duplicate chunks wasting context slots (see api/lib/retrieval.ts)
+- Do not raise the threshold to fix relevance. Measured on this corpus, 0.35
+  returns zero results for questions the documents do answer
+- Changing chunk size or overlap means reprocessing every document
 
 ### Issue 3: LLM Hallucinations
 **Symptom**: LLM provides information not in retrieved context
@@ -358,7 +365,7 @@ Every fact MUST have a citation. Example: "The study found 35% improvement [1]."
 - Query response: <3s total (search + LLM)
 
 ### 4. Quality Metrics
-- Minimum similarity: 0.7 (standard), 0.85 (high precision)
+- Threshold 0.30; below the 0.45 sufficiency floor the answer is flagged
 - Citation accuracy: >90%
 - Result relevance: Manual validation
 
@@ -373,9 +380,9 @@ A successful RAG optimization:
 
 ## Related Resources
 
-- [RAG Pipeline Guide](../context/rag-pipeline.md)
-- [Embedding Strategy](../context/embedding-strategy.md)
-- [Qdrant Patterns](../context/qdrant.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema
 - [CLAUDE.md](../CLAUDE.md) - Quick reference
 
 ---

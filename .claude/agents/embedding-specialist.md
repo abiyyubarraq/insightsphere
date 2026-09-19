@@ -11,9 +11,10 @@ You are a specialized expert in vector embeddings, dimension management, and emb
 
 ## Core Responsibilities
 
-- Design multi-provider embedding fallback strategies
+- Keep documents and queries on the same model. There is no fallback, and
+  adding one is the single change this project forbids outright
 - Manage embedding dimensions (1536 for OpenAI)
-- Optimize batch generation (100 texts/batch)
+- Optimize batch generation (20 texts/batch)
 - Design Qdrant collection strategies
 - Implement vector search filtering
 - Handle vector metadata schemas
@@ -56,8 +57,8 @@ if (collectionDims !== embeddingDims) {
 
 ### 2. Optimize Embedding Costs
 ```typescript
-// Batch processing (10x fewer API calls)
-const BATCH_SIZE = 100;
+// Batch processing (fewer API calls)
+const BATCH_SIZE = 20;
 const batches = chunks.reduce((acc, chunk, i) => {
   const batchIndex = Math.floor(i / BATCH_SIZE);
   if (!acc[batchIndex]) acc[batchIndex] = [];
@@ -74,22 +75,27 @@ const embeddings = await Promise.all(
 
 ### 3. Design Collection Strategy
 **Per-Project** (Current):
-- Format: `insightsphere_user_{userId}_project_{projectId}`
+- Format: `insightsphere-documents_user_{userId}_project_{projectId}`
+- The prefix comes from QDRANT_COLLECTION, default `insightsphere-documents`
 - Benefits: Perfect isolation, easy deletion
-- Trade-offs: More collections
-
-**Per-User** (Alternative):
-- Format: `insightsphere_user_{userId}`
-- Benefits: Cross-project search, fewer collections
-- Trade-offs: Harder to isolate, larger search space
+- Trade-offs: More collections, and search cannot span projects
 
 ### 4. Tune Similarity Thresholds
-| Threshold | Use Case | Result Count |
-|-----------|----------|--------------|
-| 0.9+ | Duplicate detection | Very few |
-| 0.8-0.9 | High precision | Few, very relevant |
-| 0.7-0.8 | Standard RAG | Balanced |
-| 0.5-0.7 | Exploratory | Many, some irrelevant |
+Measured on this corpus with text-embedding-3-small. These are the real numbers,
+not the ones quoted for ada-002, which scored in a much higher band.
+
+| Query | Top score |
+|---|---|
+| Well matched question | 0.66 - 0.70 |
+| Answerable but phrased with a rare term | 0.34 - 0.53 |
+| Same question asked in Indonesian | 0.40 |
+| A question belonging to a different project | 0.36 |
+| Unrelated to the corpus entirely | 0.09 - 0.12 |
+
+The shipped threshold is **0.30** and the sufficiency floor is 0.45. The
+answerable and the unanswerable bands overlap around 0.34-0.36, so no single
+score separates them. That overlap is the argument for hybrid search, not for a
+higher threshold.
 
 ## Model Comparison
 
@@ -104,6 +110,6 @@ const embeddings = await Promise.all(
 
 ## Related Resources
 
-- [Embedding Strategy](../context/embedding-strategy.md)
-- [Qdrant Patterns](../context/qdrant.md)
-- [RAG Pipeline](../context/rag-pipeline.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema

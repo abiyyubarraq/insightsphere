@@ -163,5 +163,7 @@ let {
 
 ## Related Resources
 
-- [Svelte 5 Patterns](../context/svelte5-patterns.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema
 - [CLAUDE.md](../CLAUDE.md)

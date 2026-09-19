@@ -74,5 +74,6 @@ User → Frontend → API → Parser → Qdrant
 
 ## Related Resources
 
-- [Architecture Guide](../context/architecture.md)
-- [Design Principles](../context/design-principles.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema

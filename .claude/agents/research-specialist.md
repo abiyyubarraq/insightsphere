@@ -30,9 +30,9 @@ You are a technical research specialist for InsightSphere, conducting deep inves
 
 ### Phase 1: Information Gathering
 **Use MCP Tools**:
-- Context7 MCP: Technical documentation
-- Perplexity MCP: Current trends and best practices
-- npm/Deno registry: Package evaluation
+- Context7 MCP: technical documentation
+- Web search: current trends and best practices
+- npm/Deno registry: package evaluation
 - Codebase analysis: Existing patterns
 
 ### Phase 2: Analysis & Synthesis
@@ -116,5 +116,6 @@ Trade-off: Higher usage costs at scale
 
 ## Related Resources
 
-- [RAG Pipeline](../context/rag-pipeline.md)
-- [Embedding Strategy](../context/embedding-strategy.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema

@@ -13,9 +13,9 @@ The application allows users to create multiple projects, upload documents, and 
 
 - **`frontend/`** – Svelte 5 + SvelteKit 2 + TypeScript + TailwindCSS v4 + DaisyUI + Lucide icons
 - **`api/`** – Deno (≥2.5) + Hono for API + RAG orchestration
-- **`doc-parser/`** – Go 1.24 + UniPDF/gooxml for PDF/DOCX parsing
-- **`vector-utils/`** – Qdrant client helpers for embedding storage/retrieval
-- **`shared/`** – Shared types and utilities
+- **`doc-parser/`** – Go 1.24 + Gin. PDF via pdftoppm + tesseract, DOCX by reading word/document.xml
+- **`shared/`** – Types and constants used by both the frontend and the API
+- **`supabase/`** – Migrations. The schema is authoritative here, not in any document
 - **`docker/`, `dev/`** – Local development & deployment configs
 
 ---
@@ -39,14 +39,15 @@ The application allows users to create multiple projects, upload documents, and 
 
 ### API (`api/`)
 - Written in TypeScript for Deno
-- ES modules with `import_map.json`
-- Endpoints under `/v1/`
+- ES modules with the import map in `deno.jsonc`
+- Endpoints under `/v1/`, every one requiring a Supabase JWT
 - JSON responses use camelCase keys and ISO 8601 dates
-- SSE (`text/event-stream`) for streaming AI chat tokens
-- Endpoints validate user ownership via Supabase Auth before processing
+- Chat is a plain JSON POST, not SSE. Nothing streams
+- `POST /v1/documents/process` returns 202 and works in the background
+- Endpoints validate user ownership themselves, because the API holds the service-role key and bypasses RLS
 
 ### Doc-Parser (`doc-parser/`)
-- Go standard library + UniPDF/gooxml for parsing
+- Go standard library + Gin. External binaries pdftoppm and tesseract do the work
 - `/parse/pdf` and `/parse/docx` endpoints return:
   - Parsed text
   - Per-page metadata
@@ -81,7 +82,7 @@ The application allows users to create multiple projects, upload documents, and 
 ## 🧑‍💻 Development Workflow
 
 1. Start local stack: `docker compose -f dev/compose.yaml up`
-2. Frontend: `pnpm dev` → `http://localhost:5173`
+2. Frontend: `npm run start` → `http://localhost:5173`
 3. Backend: `deno task dev` for API, run Go parser service separately
 4. Run `npm run format && npm run lint` before committing
 5. Tests:
@@ -128,26 +129,26 @@ const queryEmbedding = await openaiClient.generateEmbedding({
 
 // ❌ Wrong - dimension mismatch
 const docEmbedding = await openaiClient.generateEmbedding(text);  // 1536 dims
-const queryEmbedding = await embeddingClient.generateHuggingFaceEmbedding(query);  // 4096 dims
-// Result: Zero search results
+const queryEmbedding = await someOtherProvider.embed(query);  // different dims
+// Result: Zero search results. There is no fallback, by design
 ```
 
 ### Text Chunking Best Practices
-- **Standard configuration**: 800 tokens per chunk, 100 token overlap
-- **Preserve sentence boundaries**: Split on periods to maintain semantic coherence
+- **Standard configuration**: 800 tokens per chunk, 50 token overlap
+- **Character splitting, not sentence splitting**: deliberate, for memory
 - **Include page metadata**: Track page numbers for citations
 - **Maintain source attribution**: Required for RAG citation accuracy
 
 ```typescript
 const textChunks = chunkPages(pageContents, {
   maxChunkSize: 800,         // Balances context vs. precision
-  overlap: 100,              // Prevents info loss at boundaries
-  preserveSentences: true    // Maintains semantic coherence
+  overlap: 50,               // Prevents info loss at boundaries
+  preserveSentences: false   // Character splitting uses less memory
 });
 ```
 
 ### Qdrant Collection Strategy
-- **Per-project isolation**: `insightsphere_user_{userId}_project_{projectId}`
+- **Per-project isolation**: `insightsphere-documents_user_{userId}_project_{projectId}`
 - **Lazy creation**: Create collection on first document upload
 - **Vector config**: size=1536 (OpenAI), distance=Cosine
 - **Rich metadata**: documentId, projectId, userId, fileName, pageNumber, chunkIndex, createdAt
@@ -164,8 +165,8 @@ await qdrantService.upsertChunks(documentChunks);
 
 ### RAG Query Optimization
 - **Use filters for security**: ALWAYS filter by projectId + userId
-- **Similarity threshold**: 0.7 minimum for relevance
-- **Limit results**: 10 chunks max for context (fits in 4K token window)
+- **Similarity threshold**: 0.30, measured on this corpus. Higher drops real answers
+- **Limit results**: 5 chunks, capped at 4000 characters of context
 - **Build context with citations**: Include source metadata for transparency
 
 ```typescript
@@ -173,8 +174,8 @@ const results = await qdrantService.searchSimilar(queryVector, {
   userId: user.id,              // Required for collection selection
   projectId: project.id,        // Required for filtering
   useProjectCollection: true,   // Required
-  threshold: 0.7,               // Minimum relevance
-  limit: 10                     // Max chunks
+  threshold: 0.30,              // From shared/constants, do not hardcode
+  limit: 5                      // Max chunks
 });
 ```
 
@@ -184,7 +185,7 @@ const results = await qdrantService.searchSimilar(queryVector, {
 ### Service Communication Patterns
 - **Frontend → API**: HTTP/REST with JWT (Bearer token)
 - **API → doc-parser**: HTTP POST with file path
-- **API → Qdrant**: gRPC client (qdrant-js)
+- **API → Qdrant**: REST over HTTP on 6333 (@qdrant/js-client-rest)
 - **API → Supabase**: Service key (backend), Anon key (frontend)
 
 ```typescript
@@ -205,7 +206,7 @@ const { data } = await supabase.storage.from('bucket').list();
 
 ### Error Handling Across Services
 - **Retry with exponential backoff**: 3 attempts max for transient failures
-- **Graceful degradation**: Fallback to alternatives when possible
+- **Never fall back to another embedding provider**: different dimensions make search silently useless
 - **Detailed error messages**: Include service context and trace IDs
 - **Log cross-service requests**: Use trace IDs for debugging
 

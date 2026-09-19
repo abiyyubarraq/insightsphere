@@ -31,6 +31,8 @@ Ingestion, in order:
 
 Asking a question embeds it with the *same* model, searches only that project's collection, and hands the top chunks to the model with instructions to answer from them alone. Each chunk carries its filename and page number, which become the clickable citations.
 
+A follow-up question is rewritten into one that stands on its own before it is searched for, because "and what about the second one?" matches nothing on its own. Both the original and the rewrite are searched and the two result lists are fused, since a rewrite used alone retrieves worse than a rewrite plus the original. When the best chunk is still a weak match the answer is given anyway, and labelled as one.
+
 ---
 
 ## Design decisions
@@ -121,7 +123,7 @@ api/            Deno + Hono
   routes/       documents, projects, search, chat
 doc-parser/     Go OCR service (pdftoppm + tesseract)
 frontend/       SvelteKit 5, runes throughout
-shared/         types shared by the frontend and the API
+shared/         types and constants shared by the frontend and the API
 supabase/       migrations: schema, RLS, constraints
 dev/            docker compose for local development
 scripts/        security verification, schema dump
@@ -133,7 +135,7 @@ scripts/        security verification, schema dump
 
 Working: upload and processing of PDF, DOCX, TXT and Markdown; OCR; chunking; embedding; per-project vector search; chat with page-level citations; document summaries; the file library; and deletion of documents and projects.
 
-Tests: 53 across the three languages, run in CI along with the three container image builds.
+Tests: 81 across the three languages, run in CI along with the three container image builds.
 
 Not done yet:
 

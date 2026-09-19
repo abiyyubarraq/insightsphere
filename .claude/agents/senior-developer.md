@@ -115,7 +115,7 @@ const queryEmbedding = await openaiClient.generateEmbedding({ text: query, model
 
 // ❌ Wrong - Mixed models
 const docEmbeddings = await openaiClient.generateBatchEmbeddings(chunks);
-const queryEmbedding = await embeddingClient.generateHuggingFaceEmbedding(query);
+const queryEmbedding = await someOtherProvider.embed(query); // no fallback exists, by design
 ```
 
 ### Qdrant Per-Project Collections
@@ -202,7 +202,7 @@ export async function handleAction(c: Context) {
   async function loadProject() {
     loading = true;
     try {
-      const response = await fetch(`/api/projects/${projectId}`);
+      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/query`);
       project = await response.json();
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load';
@@ -225,6 +225,6 @@ export async function handleAction(c: Context) {
 ## Related Resources
 
 - [CLAUDE.md](../CLAUDE.md) - Quick reference
-- [Design Principles](../context/design-principles.md)
-- [Svelte 5 Patterns](../context/svelte5-patterns.md)
-- [Deno Conventions](../context/deno-conventions.md)
+- [README](../../README.md) — what the system does and why
+- [CLAUDE.md](../../CLAUDE.md) — layout, real values, and what not to do
+- [supabase/migrations/](../../supabase/migrations/) — the authoritative schema
