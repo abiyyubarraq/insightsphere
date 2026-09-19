@@ -42,7 +42,7 @@
 
   // Confirmation dialog state
   let showConfirmDialog = $state(false);
-  let fileToRemove: { index: number; name: string } | null = $state(null);
+  let fileToRemove: { id: string; name: string } | null = $state(null);
 
   // Project management state
   let showRenameModal = $state(false);
@@ -186,27 +186,25 @@
     );
   };
 
-  const removeFile = async (index: number) => {
-    const file = uploadedFiles[index];
+  const removeFile = async (fileId: string) => {
+    const file = uploadedFiles.find((f) => f.id === fileId);
     if (!file || !$selectedProject || !$user) return;
 
-    // Show confirmation dialog
-    fileToRemove = { index, name: file.file_name };
+    fileToRemove = { id: file.id, name: file.file_name };
     showConfirmDialog = true;
   };
 
   const confirmRemoveFile = async () => {
     if (!fileToRemove || !$selectedProject || !$user) return;
 
-    const file = uploadedFiles[fileToRemove.index];
+    const fileId = fileToRemove.id;
+    const file = uploadedFiles.find((f) => f.id === fileId);
     if (!file) return;
-
-    const fileIndex = fileToRemove.index;
 
     await withLoading(
       async () => {
         await deleteDocument(file.id, $selectedProject.id, $user.id);
-        uploadedFiles = uploadedFiles.filter((_, i) => i !== fileIndex);
+        uploadedFiles = uploadedFiles.filter((f) => f.id !== fileId);
       },
       (loadingState) => {
         removingFileLoading[file.id] = loadingState;
@@ -246,10 +244,7 @@
   };
 
   const handleFileRemove = (event: CustomEvent<{ fileId: string }>) => {
-    const fileIndex = uploadedFiles.findIndex((f) => f.id === event.detail.fileId);
-    if (fileIndex !== -1) {
-      removeFile(fileIndex);
-    }
+    removeFile(event.detail.fileId);
   };
 
   const handleFileProcess = async (event: CustomEvent<{ fileId: string }>) => {
@@ -639,7 +634,7 @@
   cancelText="Cancel"
   confirmClass="btn-error"
   icon="danger"
-  loading={fileToRemove ? removingFileLoading[uploadedFiles[fileToRemove.index]?.id] : false}
+  loading={fileToRemove ? (removingFileLoading[fileToRemove.id] ?? false) : false}
   onconfirm={confirmRemoveFile}
   oncancel={cancelRemoveFile}
 />

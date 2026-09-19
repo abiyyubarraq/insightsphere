@@ -1,3 +1,9 @@
+import { v5 as uuidv5 } from "@std/uuid";
+
+// Fixed namespace so IDs stay stable across restarts and deploys. Never change
+// this: it would orphan every point already stored.
+const CHUNK_ID_NAMESPACE = "a3f1c9e2-7b4d-5a86-9c1f-2e8d4b6a0f37";
+
 export interface ChunkOptions {
   maxChunkSize?: number;
   overlap?: number;
@@ -214,32 +220,20 @@ export function chunkPages(
 }
 
 /**
- * Create a unique chunk ID for vector storage
- * Qdrant requires UUIDs or unsigned integers, so we generate a proper UUID
+ * Stable point ID for a chunk.
+ *
+ * Qdrant upserts by point ID, so the ID has to be derived from the chunk's
+ * identity. It used to return crypto.randomUUID(), which meant reprocessing a
+ * document appended a fresh copy of every chunk instead of replacing it.
  */
-export function createChunkId(
+export async function createChunkId(
   documentId: string,
   chunkIndex: number,
-  pageNumber?: number
-): string {
-  // Create a deterministic UUID based on document ID and chunk info
-  // This ensures the same document + chunk always gets the same ID
-  const baseString =
-    pageNumber !== undefined
-      ? `${documentId}_page${pageNumber}_chunk${chunkIndex}`
-      : `${documentId}_chunk${chunkIndex}`;
+  pageNumber?: number,
+): Promise<string> {
+  const key = pageNumber !== undefined
+    ? `${documentId}_page${pageNumber}_chunk${chunkIndex}`
+    : `${documentId}_chunk${chunkIndex}`;
 
-  // Generate a UUID v5 (deterministic) based on the base string
-  return generateDeterministicUUID(baseString);
-}
-
-/**
- * Generate a deterministic UUID from a string
- * This ensures the same input always produces the same UUID
- */
-function generateDeterministicUUID(_input: string): string {
-  // For now, let's just use crypto.randomUUID() and accept non-deterministic IDs
-  // This will ensure we always get valid UUIDs that Qdrant accepts
-  // TODO: Implement proper deterministic UUID generation later if needed
-  return crypto.randomUUID();
+  return await uuidv5.generate(CHUNK_ID_NAMESPACE, new TextEncoder().encode(key));
 }

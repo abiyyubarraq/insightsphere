@@ -44,6 +44,18 @@ export interface ChatCompletionResponse {
   model: string;
 }
 
+/**
+ * Applied to queries and to document chunks alike.
+ *
+ * The query path used to additionally strip every non-ASCII character while the
+ * document path left text untouched, so the two sides of the search were
+ * embedded from different text. Collapsing whitespace is safe for both; removing
+ * characters is not, and is no longer done.
+ */
+export function normalizeForEmbedding(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 export class OpenAIClient {
   private client: OpenAI;
 
@@ -63,6 +75,10 @@ export class OpenAIClient {
   async generateEmbedding(
     request: EmbeddingRequest
   ): Promise<EmbeddingResponse> {
+    const input = normalizeForEmbedding(request.text);
+    if (!input) {
+      throw new Error("Cannot embed empty text");
+    }
     try {
       const response = await this.client.embeddings.create({
         model: request.model || "text-embedding-3-small",
@@ -117,7 +133,7 @@ export class OpenAIClient {
 
         const response = await this.client.embeddings.create({
           model,
-          input: batch,
+          input: batch.map(normalizeForEmbedding),
           encoding_format: "float",
         });
 

@@ -1,4 +1,5 @@
 import { QdrantClient } from "qdrant-js";
+import { SEARCH_DEFAULTS } from "./constants.ts";
 
 export interface QdrantConfig {
   url: string;
@@ -59,7 +60,7 @@ export class QdrantService {
 
   async ensureCollection(
     userId: string,
-    dimension = 1024,
+    dimension = 1536,
     projectId?: string,
   ): Promise<string> {
     try {
@@ -82,21 +83,14 @@ export class QdrantService {
           const currentDimension = collectionInfo.config?.params?.vectors?.size;
 
           if (currentDimension && currentDimension !== dimension) {
-            console.log(
-              `🔄 Collection dimension mismatch: expected ${dimension}, got ${currentDimension}`,
-            );
-            console.log(`🗑️ Recreating collection with correct dimensions...`);
-
-            // Delete and recreate with correct dimensions
-            await this.client.deleteCollection(collectionName);
-            await this.client.createCollection(collectionName, {
-              vectors: {
-                size: dimension,
-                distance: "Cosine",
-              },
-            });
-            console.log(
-              `✅ Collection recreated: ${collectionName} with ${dimension} dimensions`,
+            // This used to drop and recreate the collection, destroying every
+            // document in the project to make room for the one being processed.
+            // Changing embedding model is a migration, not a side effect.
+            throw new Error(
+              `Collection ${collectionName} stores ${currentDimension}-dimension vectors ` +
+                `but ${dimension} was supplied. Refusing to continue: recreating the ` +
+                `collection would delete every document in this project. Migrate the ` +
+                `collection deliberately if the embedding model changed.`,
             );
           } else {
             console.log(
@@ -104,6 +98,9 @@ export class QdrantService {
             );
           }
         } catch (error) {
+          if (error instanceof Error && error.message.includes("Refusing to continue")) {
+            throw error;
+          }
           console.warn(
             "Could not verify collection dimensions, assuming it's correct:",
             error,
@@ -219,7 +216,7 @@ export class QdrantService {
     try {
       const {
         limit = 10,
-        threshold = 0.7,
+        threshold = SEARCH_DEFAULTS.threshold,
         projectId,
         documentId,
         userId,
@@ -354,6 +351,21 @@ export class QdrantService {
           error instanceof Error ? error.message : "Unknown error"
         }`,
       );
+    }
+  }
+
+  /** Drops the whole per-project collection. Used when a project is deleted. */
+  async deleteProjectCollection(
+    userId: string,
+    projectId: string,
+  ): Promise<void> {
+    const collectionName = this.getProjectCollectionName(userId, projectId);
+    try {
+      await this.client.deleteCollection(collectionName);
+      console.log(`Deleted collection: ${collectionName}`);
+    } catch (error) {
+      // Nothing was ever indexed for this project; that is a no-op, not a failure.
+      console.warn(`Could not delete collection ${collectionName}:`, error);
     }
   }
 

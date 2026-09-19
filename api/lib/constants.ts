@@ -1,35 +1,22 @@
-export const AI_MODELS = [
-  "HuggingFaceTB/SmolLM3-3B",
-  "deepseek-ai/DeepSeek-V3.1",
-  "deepseek-ai/DeepSeek-R1",
-];
+/**
+ * Retrieval defaults.
+ *
+ * These were previously spread across the routes with values from 0.25 to 0.7,
+ * so the same question answered differently depending on which endpoint it
+ * entered through.
+ */
+export const SEARCH_DEFAULTS = {
+  /** Chunks pulled from Qdrant per query. */
+  maxChunks: 5,
+  /**
+   * Cosine score floor. Low because OCR'd text embeds noisily; raising it
+   * starts dropping relevant passages before it drops irrelevant ones.
+   */
+  threshold: 0.3,
+  /** Characters of context handed to the LLM. */
+  maxContextLength: 4000,
+} as const;
 
-export const CONVERSATIONAL_MODELS = [
-  "SmolLM3",
-  "SmolLM2",
-  "Llama-3",
-  "Mistral-7B-Instruct",
-  "Qwen",
-];
-
-export const EMBEDDING_MODELS = "Qwen/Qwen3-Embedding-8B";
-
-// Embedding dimensions for each model
-export const EMBEDDING_DIMENSIONS = {
-  "Qwen/Qwen3-Embedding-0.6B": 1024,
-  "Qwen/Qwen3-Embedding-4B": 2560,
-  "Qwen/Qwen3-Embedding-8B": 4096,
-  "BAAI/bge-small-en-v1.5": 384,
-  "sentence-transformers/all-MiniLM-L6-v2": 384,
-  "text-embedding-3-small": 1536,
-  "text-embedding-3-large": 3072,
-};
-
-// Alternative embedding models (in order of preference)
-export const EMBEDDING_MODEL_OPTIONS = [
-  "Qwen/Qwen3-Embedding-0.6B", // Best balance of performance and efficiency
-  "Qwen/Qwen3-Embedding-4B", // Higher performance, more resources
-  "Qwen/Qwen3-Embedding-8B", // Highest performance
-  "BAAI/bge-small-en-v1.5", // Fallback option
-  "sentence-transformers/all-MiniLM-L6-v2", // Lightweight fallback
-];
+/** Must match what documents were indexed with, or search returns nothing. */
+export const EMBEDDING_MODEL = "text-embedding-3-small";
+export const EMBEDDING_DIMENSION = 1536;

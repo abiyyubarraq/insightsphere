@@ -7,6 +7,7 @@ import { qdrantService } from "../../lib/qdrantClient.ts";
 import { openaiClient } from "../../lib/openaiClient.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { formatFileData } from "./helpers.ts";
+import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 
 /**
  * Handle semantic search mode
@@ -56,7 +57,7 @@ export async function handleSemanticSearch(
   }
 
   // Search across selected projects
-  const allFiles: FileLibraryItem[] = [];
+  const pendingFiles: Promise<FileLibraryItem>[] = [];
   for (const projectId of projectIds) {
     // Verify user has access to this project
     const hasAccess = await supabaseService.userHasProjectAccess(
@@ -86,7 +87,7 @@ export async function handleSemanticSearch(
       projectId,
       useProjectCollection: true,
       limit: 50, // Get more chunks to find unique documents
-      threshold: 0.25,
+      threshold: SEARCH_DEFAULTS.threshold,
     });
 
     // Extract unique document IDs
@@ -101,7 +102,7 @@ export async function handleSemanticSearch(
         .getClient()
         .from("project_files")
         .select(
-          "id, file_name, created_at, project_id, storage_path, projects(name)"
+          "id, file_name, created_at, project_id, storage_path, image_paths, projects(name)"
         )
         .eq("user_id", userId)
         .eq("project_id", projectId)
@@ -112,11 +113,13 @@ export async function handleSemanticSearch(
 
       if (!error && data) {
         for (const file of data as unknown as FileQueryResult[]) {
-          allFiles.push(formatFileData(file));
+          pendingFiles.push(formatFileData(file));
         }
       }
     }
   }
+
+  const allFiles = await Promise.all(pendingFiles);
 
   // Remove duplicates and limit results
   const uniqueFiles = Array.from(
