@@ -57,6 +57,11 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # node 22 ships npm 10, and the lock file is written by npm 11, which
+      # records nested dependency entries in a way npm 10 resolves differently.
+      # npm ci then fails with a spurious "Missing: picomatch from lock file".
+      # docker/Dockerfile.frontend pins the same version for the same reason.
+      - run: npm install -g npm@11.14.1
       - run: npm ci
       - run: npm run check
       - run: npm run lint
