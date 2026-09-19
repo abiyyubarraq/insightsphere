@@ -40,20 +40,17 @@ func ConvertSinglePageToGrayPNG(ctx context.Context, pdfPath string, pageNum int
 
 	outputFile := filepath.Join(outputDir, fmt.Sprintf("page-%03d.png", pageNum))
 
-	// Use pdftoppm with:
-	// -f N -l N: convert only page N
-	// -png: output as PNG format
-	// -r 300: 300 DPI (sufficient for OCR)
-	// -gray: grayscale output (50% smaller than color)
-	// -singlefile: output single file without page number suffix
+	// -gray was documented here but never passed, so pages rendered in colour at
+	// roughly three times the bytes for no gain in OCR accuracy.
 	cmd := exec.CommandContext(ctx, "pdftoppm",
-		"-f", strconv.Itoa(pageNum), // First page
-		"-l", strconv.Itoa(pageNum), // Last page (same = single page)
-		"-png",                       // PNG format
-		"-r", "300",                  // 300 DPI for OCR
-		"-singlefile",                // Don't add page number suffix
-		pdfPath,                      // Input PDF
-		strings.TrimSuffix(outputFile, ".png"), // Output prefix (without .png)
+		"-f", strconv.Itoa(pageNum),
+		"-l", strconv.Itoa(pageNum),
+		"-png",
+		"-gray",
+		"-r", strconv.Itoa(OCRDPI()),
+		"-singlefile",
+		pdfPath,
+		strings.TrimSuffix(outputFile, ".png"),
 	)
 
 	output, err := cmd.CombinedOutput()
@@ -72,11 +69,12 @@ func ConvertPDFToGrayPNGImages(ctx context.Context, pdfPath, outputDir string) (
 	outputPrefix := filepath.Join(outputDir, "page")
 
 	cmd := exec.CommandContext(ctx, "pdftoppm",
-		"-png",       // PNG format
-		"-r", "300",  // 300 DPI
-		"-cropbox",   // Use crop box
-		pdfPath,      // Input PDF
-		outputPrefix, // Output prefix
+		"-png",
+		"-gray",
+		"-r", strconv.Itoa(OCRDPI()),
+		"-cropbox",
+		pdfPath,
+		outputPrefix,
 	)
 
 	log.Printf("🔧 Running command: %s", strings.Join(cmd.Args, " "))

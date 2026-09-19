@@ -22,6 +22,7 @@ type PageData struct {
 
 
 type PipelineMetrics struct {
+	SuccessfulPages    int
 	TotalDuration      time.Duration
 	ConversionDuration time.Duration
 	OCRDuration        time.Duration
@@ -61,7 +62,7 @@ func ParsePDFWithOCR(ctx context.Context, filePath string) ([]PageData, map[stri
 	}
 
 	totalDuration := time.Since(pipelineStart)
-	successfulPages := len(pages)
+	successfulPages := metrics.SuccessfulPages
 
 	log.Printf("✅ Pipeline completed in %v", totalDuration)
 	log.Printf("📊 Metrics: Conversion=%v, OCR=%v, Avg/page: Conv=%v, OCR=%v",
@@ -90,9 +91,11 @@ func ParsePDFWithOCR(ctx context.Context, filePath string) ([]PageData, map[stri
 		"extractionMethod":  "ocr-streaming",
 		"textLength":        len(text),
 		"ocrEngine":         "tesseract",
+		"ocrLanguages":      utils.OCRLanguages(),
 		"conversionTool":    "poppler-utils",
-		"dpi":               200,
+		"dpi":               utils.OCRDPI(),
 		"colorMode":         "grayscale",
+		"failedPages":       pageCount - successfulPages,
 		"totalDurationMs":   totalDuration.Milliseconds(),
 		"conversionMs":      metrics.ConversionDuration.Milliseconds(),
 		"ocrMs":             metrics.OCRDuration.Milliseconds(),
@@ -272,6 +275,23 @@ func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCoun
 		metrics.AvgOCRTime = totalOCRTime / time.Duration(pageCount)
 	}
 
+	// A page that produced no text is a failure, whether OCR errored or simply
+	// read nothing. Previously every page was counted as a success and the error
+	// return was a hardcoded nil, so a document where nothing was extracted came
+	// back as a normal result and was stored with zero chunks.
+	for _, page := range pages {
+		if len(page.Text) > 0 {
+			metrics.SuccessfulPages++
+		}
+	}
+
+	if metrics.SuccessfulPages == 0 && pageCount > 0 {
+		return "", nil, nil, metrics, fmt.Errorf(
+			"no text extracted from any of the %d pages; the file may be image-only at a resolution tesseract cannot read, or the wrong OCR language is configured",
+			pageCount,
+		)
+	}
+
 	return strings.TrimSpace(allText.String()), pages, imagePaths, metrics, nil
 }
 
@@ -323,7 +343,7 @@ func ParsePDFWithOCRBatch(ctx context.Context, filePath string) ([]PageData, map
 		"extractionMethod": "ocr-batch",
 		"ocrEngine":        "tesseract",
 		"conversionTool":   "poppler-utils",
-		"dpi":              200,
+		"dpi":              utils.OCRDPI(),
 		"colorMode":        "grayscale",
 	}
 
@@ -482,7 +502,7 @@ func performOCR(ctx context.Context, imagePath string) (string, error) {
 	cmd := exec.CommandContext(ctx, "tesseract",
 		imagePath,                        // Input image
 		outputFile,                       // Output file (without .txt extension)
-		"-l", "eng",                      // English language
+		"-l", utils.OCRLanguages(),
 		"--psm", "1",                     // Page segmentation mode: Automatic page segmentation with OSD
 		"--oem", "1",                     // OCR Engine Mode: LSTM neural networks
 		"-c", "preserve_interword_spaces=1", // Preserve spaces between words

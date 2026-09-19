@@ -2,44 +2,37 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache \
-    git
-
-# Copy go mod files
+# Dependencies first so a source-only change reuses this layer.
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
 COPY . .
 
-# Ensure go.sum is up to date and download any new dependencies
-RUN go mod tidy && go mod download
-
-# Build the application (CGO disabled since we use command-line tools)
+# CGO off: extraction shells out to pdftoppm and tesseract rather than linking.
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o doc-parser .
 
-FROM alpine:latest
+# Pinned. On :latest the OCR toolchain can change between rebuilds, which
+# changes extraction output with nothing in the repo to explain why.
+FROM alpine:3.22
 
-# Install runtime dependencies for OCR and PDF processing
 RUN apk --no-cache add \
     ca-certificates \
     tzdata \
     tesseract-ocr \
     tesseract-ocr-data-eng \
+    tesseract-ocr-data-ind \
     poppler-utils \
     leptonica
 
-WORKDIR /root/
+RUN adduser -D -u 10001 parser
+WORKDIR /home/parser
 
-# Copy the binary from builder stage
 COPY --from=builder /app/doc-parser .
 
-# Create temp directory for image processing
-RUN mkdir -p /tmp/pdf_processing
+# The service only reads PDFs handed to it and writes to a temp dir; it has no
+# reason to run as root.
+USER parser
 
-# Expose port
 EXPOSE 8080
 
-# Run the binary
-CMD ["./doc-parser"] 
+CMD ["./doc-parser"]

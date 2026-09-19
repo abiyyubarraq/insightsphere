@@ -13,6 +13,7 @@ export interface DocumentRecord {
   storage_path: string;
   user_id: string;
   status: "uploading" | "processing" | "ready" | "failed";
+  processing_error?: string | null;
   created_at: string;
   updated_at: string;
   metadata?: Record<string, unknown>;
@@ -175,6 +176,7 @@ export class SupabaseService {
     documentId: string,
     updates: {
       status?: DocumentRecord["status"];
+      processing_error?: string | null;
       summary?: string | null;
       metadata?: Record<string, unknown>;
       is_summary_exist?: boolean;
@@ -484,6 +486,35 @@ export class SupabaseService {
       .eq("user_id", userId);
 
     if (error) throw new Error(`Failed to delete project: ${error.message}`);
+  }
+
+  /**
+   * Marks documents abandoned mid-processing as failed.
+   *
+   * Processing runs in-process, so anything that stops the server strands
+   * whatever was running. Called once at startup.
+   */
+  async failStalledDocuments(olderThanMinutes = 30): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanMinutes * 60_000)
+      .toISOString();
+
+    const { data, error } = await this.client
+      .from("project_files")
+      .update({
+        status: "failed",
+        processing_error:
+          "Processing was interrupted before it finished. Try again.",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("status", "processing")
+      .lt("updated_at", cutoff)
+      .select("id");
+
+    if (error) {
+      console.warn("Could not reset stalled documents:", error.message);
+      return 0;
+    }
+    return data?.length ?? 0;
   }
 
   /**

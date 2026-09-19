@@ -28,6 +28,14 @@ const [
   import("./routes/projects/remove.ts"),
 ]);
 
+// Anything that was mid-flight when the server last stopped is unrecoverable,
+// and the UI shows no action for a document stuck in "processing".
+const { supabaseService } = await import("./lib/supabaseClient.ts");
+const stalled = await supabaseService.failStalledDocuments();
+if (stalled > 0) {
+  console.log(`Reset ${stalled} document(s) left stuck in processing`);
+}
+
 const app = new Hono();
 
 const allowedOrigins = (Deno.env.get("CORS_ORIGINS") ??
