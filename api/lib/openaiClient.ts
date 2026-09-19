@@ -1,5 +1,6 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import OpenAI from "openai";
+import { normalizeForEmbedding } from "./chunkText.ts";
 
 export interface EmbeddingRequest {
   text: string;
@@ -42,18 +43,6 @@ export interface ChatCompletionResponse {
     total_tokens: number;
   };
   model: string;
-}
-
-/**
- * Applied to queries and to document chunks alike.
- *
- * The query path used to additionally strip every non-ASCII character while the
- * document path left text untouched, so the two sides of the search were
- * embedded from different text. Collapsing whitespace is safe for both; removing
- * characters is not, and is no longer done.
- */
-export function normalizeForEmbedding(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }
 
 export class OpenAIClient {

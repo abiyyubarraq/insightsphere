@@ -36,9 +36,6 @@ interface DocParserResponse {
 }
 
 export async function processDocument(c: Context) {
-  const startTime = Date.now();
-  let tempFilePath: string | null = null;
-
   try {
     const body = await c.req.json();
     const { project_id, document_id }: DocumentProcessRequest = body;

@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parser:
+    name: Go parser
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: doc-parser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: doc-parser/go.sum
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -race ./...
+
+  api:
+    name: Deno API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.5.2"
+      # This is the one that matters most: a missing await on an async call sat
+      # in master for months because nothing ever type-checked the API.
+      - run: deno check main.ts
+      - run: deno lint
+      - run: deno test --allow-net --allow-env --allow-read --allow-write
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - run: npm test
+      # Placeholders only. Vite inlines VITE_* at build time and the build must
+      # not need real credentials to prove it compiles.
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: ci-placeholder
+          VITE_API_URL: /v1
+
+  images:
+    name: Container images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Building them here catches the things that only break in a container:
+      # a git call at config load, a stale lock file, a base image too old for
+      # a dependency.
+      - name: Build API image
+        run: docker build -f docker/Dockerfile.api .
+      - name: Build parser image
+        run: docker build -f doc-parser/Dockerfile doc-parser
+      - name: Build frontend image
+        run: |
+          docker build -f docker/Dockerfile.frontend \
+            --build-arg VITE_SUPABASE_URL=https://example.supabase.co \
+            --build-arg VITE_SUPABASE_ANON_KEY=ci-placeholder \
+            --build-arg VITE_API_URL=/v1 .

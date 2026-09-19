@@ -4,6 +4,18 @@ import { v5 as uuidv5 } from "@std/uuid";
 // this: it would orphan every point already stored.
 const CHUNK_ID_NAMESPACE = "a3f1c9e2-7b4d-5a86-9c1f-2e8d4b6a0f37";
 
+/**
+ * Applied to queries and to document chunks alike.
+ *
+ * The query path used to additionally strip every non-ASCII character while the
+ * document path left text untouched, so the two sides of the search were
+ * embedded from different text. Collapsing whitespace is safe for both; removing
+ * characters is not, and is no longer done.
+ */
+export function normalizeForEmbedding(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 export interface ChunkOptions {
   maxChunkSize?: number;
   overlap?: number;

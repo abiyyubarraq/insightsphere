@@ -1,16 +1,19 @@
 {
 	"compilerOptions": {
 		"strict": true,
-		"lib": ["dom", "dom.iterable", "es2022"],
+		// deno.ns so test files do not each need a triple-slash directive.
+		"lib": ["deno.ns", "dom", "dom.iterable", "es2022"],
 		"jsx": "react-jsx",
 		"jsxImportSource": "hono/jsx"
 	},
 	"tasks": {
 		"dev": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run --watch main.ts",
 		"start": "deno run --allow-net --allow-env --allow-read --allow-write --allow-run main.ts",
-		"test": "deno test --allow-net --allow-env --allow-read --allow-write"
+		"test": "deno test --allow-net --allow-env --allow-read --allow-write",
+		"check": "deno check main.ts"
 	},
 	"imports": {
+		"@std/assert": "jsr:@std/assert@^1.0.0",
 		"@std/uuid": "jsr:@std/uuid@^1.0.9",
 		"@huggingface/inference": "npm:@huggingface/inference@^4.7.1",
 		"hono": "npm:hono@^4.0.0",
