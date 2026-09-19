@@ -40,12 +40,18 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-// The API dispatches .docx to /parse/docx. That route does not exist, so the
-// mismatch should stay visible rather than being discovered in production.
-func TestDocxRouteIsNotRegistered(t *testing.T) {
-	w := do(t, http.MethodPost, "/parse/docx", `{"filePath":"/tmp/x.docx"}`)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("got %d, want 404 — if this now passes, update the API dispatch and /info", w.Code)
+func TestDocxRouteRejectsBadRequests(t *testing.T) {
+	for _, body := range []string{`{}`, `{"filePath":""}`, `{`} {
+		if got := do(t, http.MethodPost, "/parse/docx", body).Code; got != http.StatusBadRequest {
+			t.Errorf("body %q gave %d, want 400", body, got)
+		}
+	}
+}
+
+func TestDocxRouteRejectsMissingFile(t *testing.T) {
+	w := do(t, http.MethodPost, "/parse/docx", `{"filePath":"/tmp/definitely-not-here.docx"}`)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d, want 500", w.Code)
 	}
 }
 

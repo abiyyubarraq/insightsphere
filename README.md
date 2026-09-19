@@ -2,7 +2,7 @@
 
 Upload documents to a project, then ask questions about them and get answers with citations back to the exact page.
 
-Scanned PDFs are handled by rendering each page and running OCR over it, so documents with no text layer work the same as ones that have it.
+Takes PDF, DOCX, TXT and Markdown. Scanned PDFs are handled by rendering each page and running OCR over it, so documents with no text layer work the same as ones that have it.
 
 ---
 
@@ -25,7 +25,7 @@ Ingestion, in order:
 
 1. The browser uploads to Supabase Storage and inserts a row in `project_files`.
 2. `POST /v1/documents/process` checks ownership and returns **202** straight away.
-3. In the background: the Go service renders each page to PNG and OCRs it.
+3. In the background: a PDF is rendered to PNG per page and OCR'd; DOCX text is read out of its XML; plain text is read as-is. Only PDF needs OCR.
 4. Pages are chunked to roughly 800 tokens, embedded with `text-embedding-3-small`, and upserted into that project's Qdrant collection.
 5. The row moves to `ready`, or to `failed` with the reason recorded. The UI polls until then.
 
@@ -38,6 +38,8 @@ Asking a question embeds it with the *same* model, searches only that project's 
 **One Qdrant collection per project**, named `insightsphere-documents_user_{userId}_project_{projectId}`. Leaking across tenants would take the wrong collection name rather than a forgotten `WHERE` clause, and deleting a project becomes a single call. The cost is that search cannot span projects.
 
 **Chunk IDs are deterministic** — a UUID v5 over `documentId_page_chunkIndex`. Qdrant upserts by point ID, so reprocessing replaces chunks rather than adding more. An earlier version returned a random UUID from a function whose name promised otherwise, which left 43% of the vector store as duplicates and meant a top-5 search could come back as the same paragraph five times.
+
+**Only PDF pays for OCR.** DOCX already holds its text in `word/document.xml`, and `.txt`/`.md` are text already, so both skip rendering entirely and finish in under a second. Markdown is kept as written rather than stripped: `## Results` is a better chunk boundary and a better embedding than `Results` on its own. Neither format records page breaks, so their citations name the file but not a page.
 
 **No embedding fallback.** If OpenAI is unavailable the request fails. A second provider means different dimensions, so the search would either error or quietly return nothing useful. Failing loudly is the cheaper outcome.
 
@@ -129,13 +131,15 @@ scripts/        security verification, schema dump
 
 ## Current state
 
-Working: PDF upload, OCR, chunking, embedding, per-project vector search, chat with page-level citations, document summaries, the file library, and deletion of documents and projects.
+Working: upload and processing of PDF, DOCX, TXT and Markdown; OCR; chunking; embedding; per-project vector search; chat with page-level citations; document summaries; the file library; and deletion of documents and projects.
+
+Tests: 53 across the three languages, run in CI along with the three container image builds.
 
 Not done yet:
 
-- **DOCX** is still referred to in a few places but the parser only handles PDF.
-- **No automated tests or CI.** `deno check`, `deno lint` and `svelte-check` are clean and `scripts/verify-security.sh` covers access control, but there is no test suite.
 - **Background work is in-process.** A restart mid-run strands a document, which a startup reaper then marks failed. A real queue would be better.
+- **`.doc`** (the old binary format) is not supported, only `.docx`.
+- **No OCR for images inside a DOCX.** Its text is read, its pictures are not.
 - **OCR defaults to English.** Set `OCR_LANGUAGES=eng+ind` for Indonesian; the image ships both.
 
 ---

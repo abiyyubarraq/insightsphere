@@ -12,7 +12,7 @@ export const API_ENDPOINTS = {
 // File constraints
 export const FILE_CONSTRAINTS = {
 	MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
-	ALLOWED_TYPES: ["pdf", "docx"],
+	ALLOWED_TYPES: ["pdf", "docx", "txt", "md"],
 	MAX_PAGES: 1000,
 } as const;
 
