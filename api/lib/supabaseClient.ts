@@ -15,7 +15,7 @@ export interface DocumentRecord {
   status: "uploading" | "processing" | "ready" | "failed";
   created_at: string;
   updated_at: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   image_paths?: Record<number, string>;
 }
 
@@ -169,39 +169,6 @@ export class SupabaseService {
   }
 
   /**
-   * Get document record by ID as admin (bypasses user ownership check)
-   */
-  async getDocumentAsAdmin(documentId: string): Promise<DocumentRecord> {
-    try {
-      const { data, error } = await this.client
-        .from("project_files")
-        .select("*")
-        .eq("id", documentId)
-        .single();
-
-      if (error) {
-        throw new Error(`Failed to fetch document: ${error.message}`);
-      }
-
-      if (!data) {
-        throw new Error("Document not found");
-      }
-
-      console.log(
-        `🔑 Admin: Retrieved document ${documentId} for user ${data.user_id}`
-      );
-      return data as DocumentRecord;
-    } catch (error) {
-      console.error("Admin document fetch failed:", error);
-      throw new Error(
-        `Failed to fetch document as admin: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-  }
-
-  /**
    * Update document status and metadata
    */
   async updateDocument(
@@ -209,13 +176,13 @@ export class SupabaseService {
     updates: {
       status?: DocumentRecord["status"];
       summary?: string | null;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
       is_summary_exist?: boolean;
       image_paths?: Record<number, string>;
     }
   ): Promise<void> {
     try {
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
         ...updates,
       };
@@ -447,6 +414,76 @@ export class SupabaseService {
         }`
       );
     }
+  }
+
+  /**
+   * Every object under a prefix, walking into folders.
+   *
+   * Storage list() only returns one level, and processing writes page images to
+   * {user}/{project}/images/{document}/page-N.png, so deleting a project means
+   * walking down to them.
+   */
+  async listStorageFiles(prefix: string): Promise<string[]> {
+    const found: string[] = [];
+
+    const walk = async (dir: string): Promise<void> => {
+      const { data, error } = await this.client.storage
+        .from(this.bucketName)
+        .list(dir, { limit: 1000 });
+
+      if (error || !data) return;
+
+      for (const entry of data) {
+        const full = dir ? `${dir}/${entry.name}` : entry.name;
+        // Storage marks folders by returning a null id.
+        if (entry.id === null) await walk(full);
+        else found.push(full);
+      }
+    };
+
+    await walk(prefix.replace(/\/$/, ""));
+    return found;
+  }
+
+  async deleteStorageFiles(paths: string[]): Promise<number> {
+    if (paths.length === 0) return 0;
+
+    // The API rejects very large batches, so chunk it.
+    let removed = 0;
+    for (let i = 0; i < paths.length; i += 100) {
+      const batch = paths.slice(i, i + 100);
+      const { error } = await this.client.storage
+        .from(this.bucketName)
+        .remove(batch);
+      if (error) {
+        console.warn(`Failed to remove ${batch.length} objects:`, error.message);
+        continue;
+      }
+      removed += batch.length;
+    }
+    return removed;
+  }
+
+  /** Removes the row. document_pages and chat_citations cascade from it. */
+  async deleteDocumentRow(documentId: string, userId: string): Promise<void> {
+    const { error } = await this.client
+      .from("project_files")
+      .delete()
+      .eq("id", documentId)
+      .eq("user_id", userId);
+
+    if (error) throw new Error(`Failed to delete document: ${error.message}`);
+  }
+
+  /** Removes the row. project_files and chat_conversations cascade from it. */
+  async deleteProjectRow(projectId: string, userId: string): Promise<void> {
+    const { error } = await this.client
+      .from("projects")
+      .delete()
+      .eq("id", projectId)
+      .eq("user_id", userId);
+
+    if (error) throw new Error(`Failed to delete project: ${error.message}`);
   }
 
   /**

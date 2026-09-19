@@ -5,7 +5,6 @@ import type {
 } from "../../../shared/types/index.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { openaiClient } from "../../lib/openaiClient.ts";
-// import { embeddingClient } from "../../lib/embeddingClient.ts"; // Removed - no longer using fallback embeddings
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import {
   chunkPages,
@@ -38,21 +37,18 @@ export async function processDocument(c: Context) {
 
   try {
     const body = await c.req.json();
-    const { project_id, document_id, storage_path }: DocumentProcessRequest =
-      body;
+    const { project_id, document_id }: DocumentProcessRequest = body;
 
-    if (!project_id || !document_id || !storage_path) {
+    if (!project_id || !document_id) {
       return c.json(
         {
           success: false,
-          error:
-            "Missing required fields: project_id, document_id, storage_path",
+          error: "Missing required fields: project_id, document_id",
         } as DocumentProcessResponse,
-        400
+        400,
       );
     }
 
-    // Extract and validate Authorization header
     const authHeader = c.req.header("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return c.json(
@@ -60,74 +56,45 @@ export async function processDocument(c: Context) {
           success: false,
           error: "Missing or invalid Authorization header",
         } as DocumentProcessResponse,
-        401
+        401,
       );
     }
 
-    const token = authHeader.replace("Bearer ", "");
-
-    // Check if this is an admin token (Legacy JWT secret)
-    const legacyJwtSecret = Deno.env.get("LEGACY_JWT_SECRET");
     let user: { id: string; email?: string };
-    let isAdminMode = false;
-
-    if (legacyJwtSecret && token === legacyJwtSecret) {
-      // Admin mode - bypass user auth and get user info directly from document
-      console.log("🔑 Admin mode: Using Legacy JWT secret");
-      isAdminMode = true;
-
-      // Get document first to find the user_id
-      const adminDocument = await supabaseService.getDocumentAsAdmin(
-        document_id
+    try {
+      user = await supabaseService.getUserFromToken(
+        authHeader.slice("Bearer ".length),
       );
-      user = { id: adminDocument.user_id, email: "admin@insightsphere.app" };
-      console.log(
-        `Processing document ${document_id} for user ${user.id} (admin mode)`
-      );
-    } else {
-      // Regular user mode - validate JWT token
-      user = await supabaseService.getUserFromToken(token);
-      console.log(
-        `Processing document ${document_id} for user ${user.id} (user mode)`
+    } catch {
+      return c.json(
+        { success: false, error: "Unauthorized" } as DocumentProcessResponse,
+        401,
       );
     }
 
-    // Validate user has access to the document
-    let document;
-    if (isAdminMode) {
-      // Admin mode - get document without user restriction
-      document = await supabaseService.getDocumentAsAdmin(document_id);
-    } else {
-      // Regular mode - validate user ownership
-      document = await supabaseService.getDocument(document_id, user.id);
-    }
-    console.log(`Document found: ${document.file_name} (${document.status})`);
+    // Throws if the document is missing or not owned by this user.
+    const document = await supabaseService.getDocument(document_id, user.id);
 
-    // Validate user has access to the project
-    if (!isAdminMode) {
-      const hasProjectAccess = await supabaseService.validateProjectAccess(
-        project_id,
-        user.id
+    const hasProjectAccess = await supabaseService.validateProjectAccess(
+      project_id,
+      user.id,
+    );
+    if (!hasProjectAccess) {
+      return c.json(
+        {
+          success: false,
+          error: "Access denied to project",
+        } as DocumentProcessResponse,
+        403,
       );
-      if (!hasProjectAccess) {
-        return c.json(
-          {
-            success: false,
-            error: "Access denied to project",
-          } as DocumentProcessResponse,
-          403
-        );
-      }
-    } else {
-      console.log("🔑 Admin mode: Skipping project access validation");
     }
 
     // Update document status to processing
     await supabaseService.updateDocument(document_id, { status: "processing" });
 
     // Download file from Supabase Storage
-    console.log(`Downloading file: ${storage_path}`);
-    const fileData = await supabaseService.downloadFile(storage_path);
+    console.log(`Downloading file: ${document.storage_path}`);
+    const fileData = await supabaseService.downloadFile(document.storage_path);
 
     // Create temporary file for Go parser
     tempFilePath = await supabaseService.createTempFile(
@@ -261,6 +228,12 @@ export async function processDocument(c: Context) {
     // @ts-ignore - intentionally clearing for memory
     parseResult.text = "";
 
+    try {
+      await qdrantService.deleteByDocumentId(document_id, user.id, project_id);
+    } catch (purgeError) {
+      console.warn("Could not clear previous chunks:", purgeError);
+    }
+
     console.log(
       `📦 Processing ${totalPages} pages one at a time (memory-optimized)...`
     );
@@ -321,12 +294,12 @@ export async function processDocument(c: Context) {
       }
 
       // Step 4: Prepare document chunks for Qdrant
-      const documentChunks: DocumentChunk[] = textChunks.map(
-        (chunk, index) => ({
-          id: createChunkId(
+      const documentChunks: DocumentChunk[] = await Promise.all(
+        textChunks.map(async (chunk, index) => ({
+          id: await createChunkId(
             document_id,
             globalChunkIndex + index,
-            chunk.pageNumber
+            chunk.pageNumber,
           ),
           content: chunk.content,
           embedding: embeddings[index].embedding,
@@ -341,7 +314,7 @@ export async function processDocument(c: Context) {
             createdAt: new Date().toISOString(),
             embeddingModel: embeddingModel,
           },
-        })
+        })),
       );
 
       globalChunkIndex += textChunks.length;

@@ -1,8 +1,8 @@
 import type { Context } from "hono";
 import { qdrantService } from "../../lib/qdrantClient.ts";
-import { embeddingClient } from "../../lib/embeddingClient.ts";
 import { openaiClient } from "../../lib/openaiClient.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
+import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 
 interface SearchRequest {
   query: string;
@@ -31,7 +31,7 @@ export async function searchDocuments(c: Context) {
 
     // Parse request body
     const body = await c.req.json() as SearchRequest;
-    const { query, project_id, limit = 10, threshold = 0.7 } = body;
+    const { query, project_id, limit = 10, threshold = SEARCH_DEFAULTS.threshold } = body;
 
     if (!query?.trim()) {
       return c.json({ error: "Query is required" }, 400);
@@ -43,67 +43,45 @@ export async function searchDocuments(c: Context) {
 
     console.log(`🔍 Searching in project: ${project_id} for query: "${query}"`);
 
-    // Get user from token (or use admin mode)
-    const legacySecret = Deno.env.get("LEGACY_JWT_SECRET");
     const authHeader = c.req.header("Authorization");
-
-    let user;
-    if (authHeader?.startsWith(`Bearer ${legacySecret}`)) {
-      console.log("🔑 Admin mode: Searching across all projects");
-      // In admin mode, we'll need a way to determine the user
-      // For now, let's extract it from a header or query param
-      const adminUserId = c.req.header("X-Admin-User-Id");
-      if (!adminUserId) {
-        return c.json(
-          { error: "Admin mode requires X-Admin-User-Id header" },
-          400,
-        );
-      }
-      user = { id: adminUserId };
-    } else {
-      // Normal user authentication
-      user = await supabaseService.getUserFromToken(
-        authHeader?.replace("Bearer ", "") || "",
-      );
-      if (!user) {
-        return c.json({ error: "Unauthorized" }, 401);
-      }
-
-      // Verify user has access to this project
-      const hasAccess = await supabaseService.userHasProjectAccess(
-        user.id,
-        project_id,
-      );
-      if (!hasAccess) {
-        return c.json({ error: "Access denied to this project" }, 403);
-      }
+    if (!authHeader?.startsWith("Bearer ")) {
+      return c.json({ error: "Unauthorized" }, 401);
     }
 
-    // Generate embedding for the query
-    let queryEmbedding: number[] = [];
-    let embeddingModel = "text-embedding-3-small";
-
+    let user: { id: string; email?: string };
     try {
-      console.log("🤖 Generating OpenAI embedding for query...");
-      const embedding = await openaiClient.generateEmbedding({ text: query });
-      queryEmbedding = embedding.embedding;
-      console.log(
-        `✅ Generated OpenAI embedding (${queryEmbedding.length} dimensions)`,
+      user = await supabaseService.getUserFromToken(
+        authHeader.slice("Bearer ".length),
       );
-    } catch (_error) {
-      console.log("⚠️ OpenAI failed, trying Hugging Face...");
-      try {
-        const embedding = await embeddingClient.generateHuggingFaceEmbedding(
-          query,
-        );
-        queryEmbedding = embedding.embedding;
-        embeddingModel = embedding.model;
-        console.log(
-          `✅ Generated ${embeddingModel} embedding (${queryEmbedding.length} dimensions)`,
-        );
-      } catch (_hfError) {
-        console.log("⚠️ Hugging Face failed: " + _hfError);
-      }
+    } catch {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const hasAccess = await supabaseService.userHasProjectAccess(
+      user.id,
+      project_id,
+    );
+    if (!hasAccess) {
+      return c.json({ error: "Access denied to this project" }, 403);
+    }
+
+    // Must match the model documents were indexed with. A fallback to a
+    // different provider would change the dimensionality and silently return
+    // nothing, so failure is surfaced instead.
+    const embeddingModel = "text-embedding-3-small";
+    let queryEmbedding: number[];
+    try {
+      const embedding = await openaiClient.generateEmbedding({
+        text: query,
+        model: embeddingModel,
+      });
+      queryEmbedding = embedding.embedding;
+    } catch (error) {
+      console.error("Query embedding failed:", error);
+      return c.json({
+        error: "Could not process the query",
+        details: error instanceof Error ? error.message : "Unknown error",
+      }, 502);
     }
 
     // Search in the project-specific collection

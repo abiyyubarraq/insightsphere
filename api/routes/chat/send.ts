@@ -16,6 +16,7 @@ import { type Context } from "hono";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { ragService } from "../../lib/ragService.ts";
 import { ChatService } from "../../lib/chatService.ts";
+import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 import type {
   SendMessageRequest,
   SendMessageResponse,
@@ -51,17 +52,18 @@ export async function sendChatMessage(c: Context) {
 
     console.log(`💬 Chat message request - Project: ${projectId}`);
 
-    // Get user from auth
     const authHeader = c.req.header("Authorization");
-    const user = await supabaseService.getUserFromToken(
-      authHeader?.replace("Bearer ", "") || "",
-    );
+    if (!authHeader?.startsWith("Bearer ")) {
+      return c.json({ success: false, error: "Unauthorized" }, 401);
+    }
 
-    if (!user) {
-      return c.json({
-        success: false,
-        error: "Unauthorized",
-      }, 401);
+    let user: { id: string; email?: string };
+    try {
+      user = await supabaseService.getUserFromToken(
+        authHeader.slice("Bearer ".length),
+      );
+    } catch {
+      return c.json({ success: false, error: "Unauthorized" }, 401);
     }
 
     // Verify user has access to project
@@ -122,8 +124,8 @@ export async function sendChatMessage(c: Context) {
 
     // Execute RAG query with conversation context
     const ragOptions = {
-      max_chunks: options.max_chunks || 5,
-      similarity_threshold: options.similarity_threshold || 0.6,
+      max_chunks: options.max_chunks ?? 5,
+      similarity_threshold: options.similarity_threshold ?? SEARCH_DEFAULTS.threshold,
       use_short_context: false,
       max_context_length: 4000,
       conversation_history: conversationContext, // Pass to RAG service
