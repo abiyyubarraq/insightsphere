@@ -28,22 +28,26 @@ export type FileQueryResult = {
 };
 
 /**
- * Validate user authentication and return user object
+ * Validate user authentication and return user object.
+ *
+ * getUserFromToken throws on a bad or expired token rather than returning null,
+ * so the error has to be caught here. Letting it escape put an expired session
+ * through the generic handler as a 500, and the file library showed "Failed to
+ * list files" where it should have sent the user back to sign in.
  */
 async function authenticateUser(c: Context) {
   const authHeader = c.req.header("Authorization");
-  const token = authHeader?.replace("Bearer ", "") || "";
-
-  if (!token) {
+  if (!authHeader?.startsWith("Bearer ")) {
     throw new Error("Unauthorized");
   }
 
-  const user = await supabaseService.getUserFromToken(token);
-  if (!user) {
+  try {
+    return await supabaseService.getUserFromToken(
+      authHeader.slice("Bearer ".length),
+    );
+  } catch {
     throw new Error("Unauthorized");
   }
-
-  return user;
 }
 
 /**
