@@ -21,16 +21,24 @@ for t in projects project_files; do
   [ "$n" = "0" ] && ok "$t: anon reads 0 rows" || bad "$t: anon reads $n rows (RLS off)"
 done
 
-# An all-null row can never be created. RLS rejects it first with 42501;
-# without RLS postgres gets as far as the not-null check and says 23502.
+# An all-null row can never be created. What matters is which layer stops it:
+# RLS rejects it with 42501, while without RLS postgres gets as far as the
+# not-null check and answers 23502, meaning the write itself was accepted.
+#
+# The anon key goes in the apikey header only. Sending it as a Bearer token too
+# makes Supabase answer 401 with an empty body, which hides the code.
 for t in projects project_files; do
-  code=$(curl -s -X POST "$URL/rest/v1/$t" -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
-         -H "Content-Type: application/json" -d '{}' \
-         | grep -o '"code":"[0-9A-Za-z]*"' | head -1 | cut -d'"' -f4)
+  resp=$(curl -s -w '\n%{http_code}' -X POST "$URL/rest/v1/$t" -H "apikey: $ANON" \
+         -H "Content-Type: application/json" -d '{}')
+  status=$(printf '%s' "$resp" | tail -1)
+  code=$(printf '%s' "$resp" | grep -o '"code":"[0-9A-Za-z]*"' | head -1 | cut -d'"' -f4)
   case "$code" in
     42501) ok  "$t: anon insert blocked by RLS (42501)" ;;
-    2350*|2350?|23503) bad "$t: anon insert ALLOWED (got $code, RLS off)" ;;
-    *)     bad "$t: unexpected code '$code'" ;;
+    235*)  bad "$t: anon insert ALLOWED (got $code, RLS off)" ;;
+    *)     case "$status" in
+             401|403) ok "$t: anon insert rejected ($status)" ;;
+             *)       bad "$t: unexpected response (status $status, code '$code')" ;;
+           esac ;;
   esac
 done
 

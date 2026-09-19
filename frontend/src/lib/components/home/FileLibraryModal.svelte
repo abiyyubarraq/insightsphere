@@ -14,7 +14,7 @@
   let loading = $state(false);
   let error = $state('');
   let searchQuery = $state('');
-  let searchMode: 'filename' | 'semantic' | 'typesense' = $state('filename');
+  let searchMode: 'filename' | 'semantic' = $state('filename');
   let selectedProjects: string[] = $state([]);
   let offset = $state(0);
   let hasMore = $state(false);
@@ -106,7 +106,7 @@
     }
   };
 
-  const handleSearchModeChange = (mode: 'filename' | 'semantic' | 'typesense') => {
+  const handleSearchModeChange = (mode: 'filename' | 'semantic') => {
     searchMode = mode;
     if (searchQuery.trim()) {
       resetAndLoadFiles();
@@ -318,13 +318,6 @@
             disabled={loading}
           >
             Semantic
-          </button>
-          <button
-            class="btn btn-sm {searchMode === 'typesense' ? 'btn-primary' : 'btn-outline'}"
-            onclick={() => handleSearchModeChange('typesense')}
-            disabled={loading}
-          >
-            Typesense
           </button>
         </div>
 
