@@ -113,12 +113,10 @@ out/
 *.sqlite
 *.sqlite3
 
-# API Keys and secrets (extra safety)
-*secret*
-*key*
-!**/shared/
-!**/*key*.example
-!**/*secret*.example
+# API keys and secrets
+*.pem
+*.key
+!**/*.example
 
 # Local development files
 dev-notes.md
@@ -145,3 +143,12 @@ coverage/
 # AI/ML model cache
 *.model
 cache/
+# Compiled Go binary (built by docker or `go build`)
+/doc-parser/doc-parser
+/doc-parser/doc-parser.exe
+
+# Machine-local Claude Code settings
+.claude/settings.local.json
+
+# Locally installed Claude Code skills (user tooling, not project config)
+.claude/skills/

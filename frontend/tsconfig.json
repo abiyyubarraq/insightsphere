@@ -9,6 +9,8 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    // shared/ is consumed by Deno too, which requires the .ts suffix on imports.
+    "allowImportingTsExtensions": true
   }
 }
