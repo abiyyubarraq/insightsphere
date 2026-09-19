@@ -23,12 +23,9 @@ type ParseResponse struct {
 	ImagesDir  string                 `json:"imagesDir,omitempty"`  // temp directory for cleanup
 }
 
-func main() {
-	// Set Gin to release mode in production
-	if os.Getenv("GIN_MODE") == "" {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
+// NewRouter builds the route table. Separate from main so tests can drive it
+// with httptest instead of binding a port.
+func NewRouter() *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
@@ -82,6 +79,16 @@ func main() {
 			"max_timeout": "20 minutes",
 		})
 	})
+
+	return r
+}
+
+func main() {
+	if os.Getenv("GIN_MODE") == "" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := NewRouter()
 
 	port := os.Getenv("PORT")
 	if port == "" {

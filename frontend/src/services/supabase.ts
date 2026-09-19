@@ -392,14 +392,16 @@ export const getConversationHistory = async (
 
   try {
     // Get or create conversation
+    // maybeSingle, not single: a project with no conversation yet is the normal
+    // first case, and single answers 406 for it, which surfaces as a console error.
     let { data: conversation, error: convError } = await supabase
       .from('chat_conversations')
       .select('*')
       .eq('project_id', projectId)
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
-    if (convError && convError.code !== 'PGRST116') {
+    if (convError) {
       throw new Error(`Failed to get conversation: ${convError.message}`);
     }
 
@@ -499,13 +501,9 @@ export const deleteConversationHistory = async (projectId: string): Promise<void
       .select('id')
       .eq('project_id', projectId)
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     if (convError) {
-      if (convError.code === 'PGRST116') {
-        // Conversation doesn't exist, nothing to delete
-        return;
-      }
       throw new Error(`Failed to get conversation: ${convError.message}`);
     }
 

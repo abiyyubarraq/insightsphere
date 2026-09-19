@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { marked } from 'marked';
-  import DOMPurify from 'isomorphic-dompurify';
+  import { renderMarkdown } from '$lib/markdown';
 
   let { content, messageId, oncitation } = $props<{
     content: string;
@@ -9,43 +8,11 @@
   }>();
 
   /**
-   * Renders assistant markdown.
-   *
-   * The output is model-generated from document text, so it is untrusted: a
-   * document can ask the model to reproduce markup, and marked passes inline
-   * HTML through by design. Everything is sanitised before it reaches {@html}.
-   *
-   * Citations are plain buttons carrying data attributes, handled by one
-   * listener on the wrapper. They used to carry an inline onclick calling a
-   * function hung off window, which required script-src 'unsafe-inline' and so
-   * made a CSP impossible.
+   * Citations are plain buttons carrying a data attribute, handled by one
+   * listener here. They used to be inline onclick attributes calling a function
+   * hung off window, which required script-src 'unsafe-inline' and so ruled out
+   * a CSP entirely.
    */
-  const renderMarkdown = (raw: string): string => {
-    try {
-      const result = marked(raw, { breaks: true, gfm: true });
-      let html = typeof result === 'string' ? result : raw;
-
-      html = html.replace(/\[doc_id:\s*(\d+(?:,\s*\d+)*)\]/g, (_match, ids: string) =>
-        ids
-          .split(',')
-          .map((id: string) => {
-            const n = parseInt(id.trim(), 10);
-            if (!Number.isFinite(n)) return '';
-            return `<button type="button" class="citation-chip" data-citation-index="${n - 1}" title="View source ${n}">${n}</button>`;
-          })
-          .join('')
-      );
-
-      return DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-citation-index'],
-        USE_PROFILES: { html: true },
-      });
-    } catch (error) {
-      console.error('Markdown rendering error:', error);
-      return DOMPurify.sanitize(raw);
-    }
-  };
-
   const onWrapperClick = (event: MouseEvent) => {
     const target = (event.target as HTMLElement)?.closest<HTMLElement>('[data-citation-index]');
     if (!target) return;
@@ -56,7 +23,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="chat-markdown" onclick={onWrapperClick}>
-  {@html renderMarkdown(content)}
+  {@html renderMarkdown(content, { citations: true })}
 </div>
 
 <style>

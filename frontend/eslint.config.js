@@ -36,7 +36,13 @@ export default [
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-console': 'warn',
-      'no-unused-vars': 'warn',
+      // TypeScript already reports unknown identifiers, and it understands
+      // type-only names such as RequestInit, which no-undef reads as globals
+      // and cannot find. Leaving it on produces false errors on valid code.
+      'no-undef': 'off',
+      // Superseded by the TypeScript-aware rule above; the base rule double
+      // reports and does not understand type positions.
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
       '@typescript-eslint/ban-ts-comment': 'off',
       '@typescript-eslint/no-require-imports': 'off',
