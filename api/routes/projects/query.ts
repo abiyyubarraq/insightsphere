@@ -6,6 +6,7 @@
 import type { Context } from "hono";
 import { type RAGQueryOptions, ragService } from "../../lib/ragService.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
+import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 
 interface QueryRequest {
   query: string;
@@ -64,55 +65,39 @@ export async function queryProject(c: Context) {
       `🔍 RAG Query Request - Project: ${projectId}, Query: "${query}"`,
     );
 
-    // Get user from token (or use admin mode)
-    const legacySecret = Deno.env.get("LEGACY_JWT_SECRET");
     const authHeader = c.req.header("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return c.json({ success: false, error: "Unauthorized" }, 401);
+    }
 
-    let user;
-    if (authHeader?.startsWith(`Bearer ${legacySecret}`)) {
-      console.log("🔑 Admin mode: RAG query with legacy JWT");
-      // In admin mode, we'll need a way to determine the user
-      const adminUserId = c.req.header("X-Admin-User-Id");
-      if (!adminUserId) {
-        return c.json({
-          success: false,
-          error: "Admin mode requires X-Admin-User-Id header",
-        }, 400);
-      }
-      user = { id: adminUserId };
-    } else {
-      // Normal user authentication
+    let user: { id: string; email?: string };
+    try {
       user = await supabaseService.getUserFromToken(
-        authHeader?.replace("Bearer ", "") || "",
+        authHeader.slice("Bearer ".length),
       );
-      if (!user) {
-        return c.json({
-          success: false,
-          error: "Unauthorized",
-        }, 401);
-      }
+    } catch {
+      return c.json({ success: false, error: "Unauthorized" }, 401);
+    }
 
-      // Verify user has access to this project
-      const hasAccess = await supabaseService.userHasProjectAccess(
-        user.id,
-        projectId,
+    const hasAccess = await supabaseService.userHasProjectAccess(
+      user.id,
+      projectId,
+    );
+    if (!hasAccess) {
+      return c.json(
+        { success: false, error: "Access denied to this project" },
+        403,
       );
-      if (!hasAccess) {
-        return c.json({
-          success: false,
-          error: "Access denied to this project",
-        }, 403);
-      }
     }
 
     console.log(`👤 User: ${user.id} querying project: ${projectId}`);
 
     // Set default options
     const queryOptions: RAGQueryOptions = {
-      max_chunks: 5,
-      similarity_threshold: 0.6,
+      max_chunks: SEARCH_DEFAULTS.maxChunks,
+      similarity_threshold: SEARCH_DEFAULTS.threshold,
       use_short_context: false,
-      max_context_length: 4000,
+      max_context_length: SEARCH_DEFAULTS.maxContextLength,
       ...options,
     };
 
