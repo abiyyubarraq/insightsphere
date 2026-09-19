@@ -111,7 +111,10 @@ export class SupabaseService {
         .from(this.bucketName)
         .upload(storagePath, blob, {
           contentType,
-          upsert: false,
+          // Page image paths are deterministic per document and page, so a
+          // reprocess writes the same key. Without this it fails with "The
+          // resource already exists" and the document loses its page images.
+          upsert: true,
           cacheControl: "3600",
         });
 

@@ -340,6 +340,16 @@ async function runPipeline(
 
       pageContents.length = 0;
 
+      // A page can legitimately produce nothing: a full-page figure, a scan of
+      // a blank sheet, a separator page. Embedding an empty list and upserting
+      // it throws "No chunks provided", which used to abort the whole document
+      // — one blank page killed a fourteen-page PDF. The document-level guard
+      // after this loop still fails a file where *every* page came back empty.
+      if (textChunks.length === 0) {
+        console.log(`  ⏭️  Page ${pageNumber} produced no text, skipping`);
+        continue;
+      }
+
       // Step 3: Generate embeddings for this batch
       let embeddings;
       try {

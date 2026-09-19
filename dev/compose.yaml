@@ -28,6 +28,10 @@ services:
     environment:
       - PORT=8080
       - GIN_MODE=debug
+      # The image ships eng and ind. English alone reads an Indonesian page as
+      # near-nothing: a 14-page Indonesian article produced 4 chunks, and the
+      # pages that "worked" gave 55 to 100 characters for a full page of text.
+      - OCR_LANGUAGES=eng+ind
     volumes:
       - shared_temp:/tmp
     depends_on:
