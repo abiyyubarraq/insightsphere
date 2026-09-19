@@ -161,3 +161,6 @@ cache/
 .claude/skills/slides/
 .claude/skills/ui-styling/
 .claude/skills/ui-ux-pro-max/
+
+# Playwright MCP scratch output
+.playwright-mcp/
