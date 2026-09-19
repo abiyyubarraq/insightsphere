@@ -54,6 +54,27 @@ export const sendChatMessage = async (
   return data;
 };
 
+const authedFetch = async (path: string, init: RequestInit = {}) => {
+  const session = await supabase.auth.getSession();
+  const token = session.data.session?.access_token;
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || err.details || `Request failed (${response.status})`);
+  }
+  return response.json();
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -141,45 +162,12 @@ export const updateProject = async (
   return data as Project;
 };
 
-export const deleteProject = async (projectId: string, userId: string): Promise<void> => {
-  // First, get all files in the project to delete them from storage
-  const { data: files, error: filesError } = await supabase
-    .from('project_files')
-    .select('storage_path')
-    .eq('project_id', projectId)
-    .eq('user_id', userId);
-
-  if (filesError) throw new Error(filesError.message);
-
-  // Delete files from storage if any exist
-  if (files && files.length > 0) {
-    const storagePaths = files.map((f) => f.storage_path).filter(Boolean);
-    if (storagePaths.length > 0) {
-      const { error: storageError } = await supabase.storage
-        .from('anotherbrainfileplayground')
-        .remove(storagePaths);
-
-      if (storageError) throw new Error(storageError.message);
-    }
-  }
-
-  // Delete project files from database
-  const { error: filesDeleteError } = await supabase
-    .from('project_files')
-    .delete()
-    .eq('project_id', projectId)
-    .eq('user_id', userId);
-
-  if (filesDeleteError) throw new Error(filesDeleteError.message);
-
-  // Finally, delete the project itself
-  const { error } = await supabase
-    .from('projects')
-    .delete()
-    .eq('id', projectId)
-    .eq('user_id', userId);
-
-  if (error) throw new Error(error.message);
+/**
+ * Deletes a project through the API so the Qdrant collection and stored page
+ * images go with it. Deleting the rows from the browser left both behind.
+ */
+export const deleteProject = async (projectId: string, _userId?: string): Promise<void> => {
+  await authedFetch(`/projects/${projectId}`, { method: 'DELETE' });
 };
 
 export const uploadDocument = async (file: File, projectId: string, userId: string) => {
@@ -212,36 +200,16 @@ export const uploadDocument = async (file: File, projectId: string, userId: stri
   return { path: data.path, fileId: data.id };
 };
 
-export const deleteDocument = async (fileId: string, projectId: string, userId: string) => {
-  // First get the file record to get the storage path
-  const { data: fileData, error: fetchError } = await supabase
-    .from('project_files')
-    .select('storage_path')
-    .eq('id', fileId)
-    .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .single();
-
-  if (fetchError) throw new Error(fetchError.message);
-  if (!fileData?.storage_path) throw new Error('File not found');
-
-  // Delete from storage first
-  const { error: storageError } = await supabase.storage
-    .from('anotherbrainfileplayground')
-    .remove([fileData.storage_path]);
-
-  if (storageError) throw new Error(storageError.message);
-
-  // Then delete the database record
-  const { error } = await supabase
-    .from('project_files')
-    .delete()
-    .eq('id', fileId)
-    .eq('project_id', projectId)
-    .eq('user_id', userId);
-
-  if (error) throw new Error(error.message);
-
+/**
+ * Deletes a document through the API. Removes its vectors, page images and the
+ * source file, then the row (document_pages and chat_citations cascade).
+ */
+export const deleteDocument = async (
+  fileId: string,
+  _projectId?: string,
+  _userId?: string
+): Promise<{ success: boolean }> => {
+  await authedFetch(`/documents/${fileId}`, { method: 'DELETE' });
   return { success: true };
 };
 

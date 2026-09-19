@@ -4,8 +4,7 @@
  */
 
 import { qdrantService } from "./qdrantClient.ts";
-// import { openaiClient } from "./openaiClient.ts";
-// import { embeddingClient } from "./embeddingClient.ts"; // Removed - no longer using fallback embeddings
+import { SEARCH_DEFAULTS } from "./constants.ts";
 import { llmClient, type LLMResponse } from "./llmClient.ts";
 import { type Citation, citationService } from "./citationService.ts";
 import { openaiClient } from "./openaiClient.ts";
@@ -49,10 +48,10 @@ export class RAGService {
     console.log(`❓ Query: "${query}"`);
 
     const {
-      max_chunks = 5,
-      similarity_threshold = 0.3, // Lowered from 0.6 to 0.3 for better results
+      max_chunks = SEARCH_DEFAULTS.maxChunks,
+      similarity_threshold = SEARCH_DEFAULTS.threshold,
       use_short_context = false,
-      max_context_length = 4000,
+      max_context_length = SEARCH_DEFAULTS.maxContextLength,
       conversation_history,
     } = options;
 
@@ -257,105 +256,6 @@ export class RAGService {
         context_length: 0,
       },
     };
-  }
-
-  /**
-   * Test RAG pipeline with sample data (for debugging)
-   */
-  async testRAGPipeline(
-    projectId: string,
-    userId: string,
-    query: string = "What are the main topics covered in these documents?",
-  ): Promise<{
-    success: boolean;
-    result?: RAGQueryResult;
-    error?: string;
-    steps: Array<{
-      step: string;
-      status: "success" | "error";
-      message: string;
-      duration_ms?: number;
-    }>;
-  }> {
-    const steps: Array<{
-      step: string;
-      status: "success" | "error";
-      message: string;
-      duration_ms?: number;
-    }> = [];
-
-    try {
-      // Test vector search
-      const searchStart = Date.now();
-      try {
-        const { queryEmbedding, embeddingModel } = await this
-          .generateQueryEmbedding(query);
-        const searchResults = await qdrantService.searchSimilar(
-          queryEmbedding,
-          {
-            userId,
-            projectId,
-            useProjectCollection: true,
-            // limit: 20,
-            threshold: 0.3,
-          },
-        );
-        steps.push({
-          step: "vector_search",
-          status: "success",
-          message:
-            `Found ${searchResults.length} relevant chunks using ${embeddingModel}`,
-          duration_ms: Date.now() - searchStart,
-        });
-      } catch (error) {
-        steps.push({
-          step: "vector_search",
-          status: "error",
-          message: `Vector search failed: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-          duration_ms: Date.now() - searchStart,
-        });
-        throw error;
-      }
-
-      // Test full RAG pipeline
-      const ragStart = Date.now();
-      try {
-        const result = await this.queryProject(projectId, userId, query, {
-          // max_chunks: 3,
-          similarity_threshold: 0.3, // Lowered from 0.5 to 0.3
-        });
-        steps.push({
-          step: "rag_generation",
-          status: "success",
-          message: `Generated answer with ${result.citations.length} citations`,
-          duration_ms: Date.now() - ragStart,
-        });
-
-        return {
-          success: true,
-          result,
-          steps,
-        };
-      } catch (error) {
-        steps.push({
-          step: "rag_generation",
-          status: "error",
-          message: `RAG generation failed: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-          duration_ms: Date.now() - ragStart,
-        });
-        throw error;
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-        steps,
-      };
-    }
   }
 }
 

@@ -11,15 +11,14 @@
 		"test": "deno test --allow-net --allow-env --allow-read --allow-write"
 	},
 	"imports": {
+		"@std/uuid": "jsr:@std/uuid@^1.0.9",
 		"@huggingface/inference": "npm:@huggingface/inference@^4.7.1",
 		"hono": "npm:hono@^4.0.0",
 		"hono/cors": "npm:hono@^4.0.0/cors",
 		"hono/logger": "npm:hono@^4.0.0/logger",
 		"openai": "npm:openai@^4.0.0",
-		"@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@^0.20.0",
 		"qdrant-js": "npm:@qdrant/js-client-rest@^1.8.0",
-		"@supabase/supabase-js": "npm:@supabase/supabase-js@^2.38.0",
-		"firebase-admin": "npm:firebase-admin@^12.0.0"
+		"@supabase/supabase-js": "npm:@supabase/supabase-js@^2.38.0"
 	}
 }
  
