@@ -30,6 +30,15 @@ export interface ChatMessageMetadata {
     chunks_retrieved?: number;
     chunks_used?: number;
     avg_similarity?: number;
+    /** Best cosine score among the chunks used. */
+    top_similarity?: number;
+    /**
+     * The best chunk scored below the sufficiency floor, so the answer rests on
+     * a weak match. Stored on the message rather than the response envelope so
+     * it survives a reload of the conversation, and set by the API so the UI
+     * never has to know what the floor is.
+     */
+    low_confidence?: boolean;
     processing_time_ms?: number;
     llm_model?: string;
     embedding_model?: string;

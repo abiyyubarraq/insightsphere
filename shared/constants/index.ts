@@ -1,89 +1,54 @@
-// API endpoints
-export const API_ENDPOINTS = {
-	HEALTH: "/health",
-	CHAT_STREAM: "/v1/chat/stream",
-	DOCUMENTS_ANALYZE: "/v1/documents/analyze",
-	DOCUMENTS_UPLOAD: "/v1/documents/upload",
-	DOCUMENTS_LIST: "/v1/documents",
-	PARSE_PDF: "/parse/pdf",
-	PARSE_DOCX: "/parse/docx",
-} as const;
+/**
+ * Values the API and the frontend both have to agree on.
+ *
+ * This file used to be imported by nothing, and most of it described a program
+ * that did not exist: endpoints that were never registered, a subscription
+ * tier system, and a retrieval threshold of 0.7 against a real one of 0.3.
+ * What is left is only what both sides actually need.
+ */
 
-// File constraints
 export const FILE_CONSTRAINTS = {
-	MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB
-	ALLOWED_TYPES: ["pdf", "docx", "txt", "md"],
+	/** Enforced in the browser and again in the API, which is the one that counts. */
+	MAX_FILE_BYTES: 100 * 1024 * 1024,
+	ALLOWED_EXTENSIONS: ["pdf", "docx", "txt", "md"],
+	/** Beyond this, OCR runs longer than anyone will wait for. */
 	MAX_PAGES: 1000,
 } as const;
 
-// Model configurations
-export const MODEL_CONFIGS = {
-	"gpt-4o": {
-		maxTokens: 128000,
-		contextWindow: 128000,
-		costPer1kTokens: 0.005,
-	},
-	"claude-3-sonnet": {
-		maxTokens: 200000,
-		contextWindow: 200000,
-		costPer1kTokens: 0.003,
-	},
+export const RETRIEVAL_DEFAULTS = {
+	/** Chunks pulled from Qdrant per query. */
+	maxChunks: 5,
+	/**
+	 * Cosine score floor, measured on the real corpus rather than guessed.
+	 *
+	 * Raising it to 0.35 looks tempting because a question belonging to another
+	 * project scores 0.36, but the same move breaks questions the documents do
+	 * answer:
+	 *
+	 *   "What is psychological inoculation?"   0.340 top ->  9 hits at 0.30, 0 at 0.35
+	 *   "echo chambers"                        0.345 top ->  3 hits at 0.30, 0 at 0.35
+	 *   Indonesian phrasing of a question that
+	 *   scores 0.684 in English                0.399 top -> 15 hits at 0.30, 4 at 0.35
+	 *
+	 * The answerable and the unanswerable bands overlap at 0.34 to 0.36, so no
+	 * single score separates them. Treat this as the "nothing at all" guard and
+	 * let sufficiencyFloor handle weak retrieval, which is what it is for.
+	 *
+	 * text-embedding-3-small scores in a much lower band than ada-002 did.
+	 * Thresholds quoted for ada-002, usually 0.7, are meaningless here.
+	 */
+	threshold: 0.3,
+	/** Characters of context handed to the LLM. */
+	maxContextLength: 4000,
+	/**
+	 * Below this top score the answer is still given, but flagged as a weak
+	 * match. A question this corpus covers well scores 0.66 to 0.68.
+	 */
+	sufficiencyFloor: 0.45,
 } as const;
 
-// Subscription limits
-export const SUBSCRIPTION_LIMITS = {
-	free: {
-		maxDocuments: 5,
-		maxFileSizeMB: 10,
-		maxQueriesPerMonth: 100,
-	},
-	pro: {
-		maxDocuments: 100,
-		maxFileSizeMB: 50,
-		maxQueriesPerMonth: 1000,
-	},
-	enterprise: {
-		maxDocuments: -1, // unlimited
-		maxFileSizeMB: 100,
-		maxQueriesPerMonth: -1, // unlimited
-	},
-} as const;
-
-// Error messages
-export const ERROR_MESSAGES = {
-	FILE_TOO_LARGE: "File size exceeds maximum limit",
-	INVALID_FILE_TYPE: "File type not supported",
-	PARSING_FAILED: "Failed to parse document",
-	UNAUTHORIZED: "Authentication required",
-	RATE_LIMITED: "Rate limit exceeded",
-	INTERNAL_ERROR: "Internal server error",
-} as const;
-
-// Status codes
-export const STATUS_CODES = {
-	OK: 200,
-	CREATED: 201,
-	BAD_REQUEST: 400,
-	UNAUTHORIZED: 401,
-	FORBIDDEN: 403,
-	NOT_FOUND: 404,
-	RATE_LIMITED: 429,
-	INTERNAL_ERROR: 500,
-} as const;
-
-// Vector search settings
-export const VECTOR_SEARCH = {
-	DEFAULT_LIMIT: 10,
-	MAX_LIMIT: 100,
-	DEFAULT_THRESHOLD: 0.7,
-	EMBEDDING_DIMENSION: 1536,
-} as const;
-
-// Time constants
-export const TIME_CONSTANTS = {
-	MINUTE: 60 * 1000,
-	HOUR: 60 * 60 * 1000,
-	DAY: 24 * 60 * 60 * 1000,
-	WEEK: 7 * 24 * 60 * 60 * 1000,
-	MONTH: 30 * 24 * 60 * 60 * 1000,
+export const EMBEDDING = {
+	/** Must match what documents were indexed with, or search returns nothing. */
+	model: "text-embedding-3-small",
+	dimensions: 1536,
 } as const;

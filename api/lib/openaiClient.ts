@@ -33,6 +33,9 @@ export interface ChatCompletionRequest {
   presence_penalty?: number;
   frequency_penalty?: number;
   response_format?: { type: "text" | "json_object" };
+  /** The SDK otherwise waits 10 minutes and retries twice, which is not a
+   * timeout any caller can build a guard on. */
+  signal?: AbortSignal;
 }
 
 export interface ChatCompletionResponse {
@@ -64,6 +67,10 @@ export class OpenAIClient {
   async generateEmbedding(
     request: EmbeddingRequest
   ): Promise<EmbeddingResponse> {
+    // Both halves of the search have to be built from the same text. This used
+    // to compute input for the empty check and then send a differently
+    // normalised string that stripped every non-ASCII character, while the
+    // document path used normalizeForEmbedding untouched.
     const input = normalizeForEmbedding(request.text);
     if (!input) {
       throw new Error("Cannot embed empty text");
@@ -71,10 +78,7 @@ export class OpenAIClient {
     try {
       const response = await this.client.embeddings.create({
         model: request.model || "text-embedding-3-small",
-        input: request.text
-          .replace(/\s+/g, " ") // collapse whitespace
-          .replace(/[^\x20-\x7E]/g, "") // remove non-ASCII if docs mixed
-          .trim(),
+        input,
         encoding_format: "float",
       });
 
@@ -180,9 +184,9 @@ export class OpenAIClient {
       const response = await this.client.chat.completions.create({
         model: request.model || "gpt-4o-mini",
         messages: transformedMessages as ChatCompletionMessageParam[],
-        max_tokens: request.max_tokens || 500,
-        temperature: request.temperature || 0.3,
-        top_p: request.top_p || 0.9,
+        max_tokens: request.max_tokens ?? 500,
+        temperature: request.temperature ?? 0.3,
+        top_p: request.top_p ?? 0.9,
         ...(request.presence_penalty !== undefined && {
           presence_penalty: request.presence_penalty,
         }),
@@ -192,7 +196,7 @@ export class OpenAIClient {
         ...(request.response_format && {
           response_format: request.response_format,
         }),
-      });
+      }, request.signal ? { signal: request.signal } : undefined);
 
       if (!response.choices || response.choices.length === 0) {
         throw new Error("No completion choices returned from OpenAI");

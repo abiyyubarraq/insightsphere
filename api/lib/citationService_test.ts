@@ -87,3 +87,20 @@ Deno.test("snippets are truncated", () => {
   ]);
   assertEquals(citations[0].text_snippet.length <= 210, true);
 });
+
+// The model is told every number in its answer must appear in the context, so
+// nothing numeric may reach the context that is not from the document. A
+// similarity score leaking into the header would be a number it could restate.
+Deno.test("retrieval scores never reach the context", () => {
+  const ctx = citationService.buildContext([
+    result({ score: 0.8317 }),
+    result({ id: "p2", score: 0.4142 }),
+  ]);
+
+  assertEquals(ctx.formatted_context.includes("0.83"), false);
+  assertEquals(ctx.formatted_context.includes("0.41"), false);
+  assertEquals(ctx.formatted_context.toLowerCase().includes("score"), false);
+  assertEquals(ctx.formatted_context.toLowerCase().includes("similarity"), false);
+  // The citations still carry it, because the UI shows it next to the source.
+  assertEquals(ctx.citations[0].similarity_score, 0.8317);
+});
