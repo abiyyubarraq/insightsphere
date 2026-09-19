@@ -1,0 +1,41 @@
+# Caddy obtains and renews the TLS certificate on its own; there is nothing to
+# configure for it beyond a domain that resolves here.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The API is mounted under the same origin so the browser makes same-origin
+	# requests. That keeps CORS out of the picture and lets the CSP stay at
+	# connect-src 'self' for the app's own calls.
+	handle /v1/* {
+		reverse_proxy api:8000 {
+			# OCR runs in the background now, but summary generation still waits
+			# on OpenAI and can take a while.
+			transport http {
+				read_timeout 300s
+			}
+		}
+	}
+
+	handle /health {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The page's own Content-Security-Policy comes from SvelteKit, which
+		# adds a per-request nonce; do not set one here or it would replace it.
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

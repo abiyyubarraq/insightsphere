@@ -236,11 +236,6 @@
     fileFilter = filename;
   };
 
-  // Expose the function to global scope for onclick handlers
-  if (typeof window !== 'undefined') {
-    (window as any).handleCitationClick = handleCitationClick;
-    (window as any).handleFilenameClick = handleFilenameClick;
-  }
 </script>
 
 <!-- Main Content Area -->
@@ -358,7 +353,11 @@
                     {#if message.content}
                       {#if message.role === 'assistant'}
                         <!-- Render markdown for assistant messages -->
-                        <ChatMarkdown content={message.content} messageId={message.id} />
+                        <ChatMarkdown
+                          content={message.content}
+                          messageId={message.id}
+                          oncitation={handleCitationClick}
+                        />
                       {:else}
                         <!-- Keep user messages as plain text -->
                         <div class="whitespace-pre-wrap">{message.content}</div>

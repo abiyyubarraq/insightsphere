@@ -8,11 +8,12 @@ yarn-error.log*
 .deno/
 deno-dir/
 
-# Environment variables
+# Environment variables. Any .env* is a real secrets file unless it ends in
+# .example, including docker/.env.prod, which holds the service role key.
 .env
-.env.local
-.env.production
-.env.test
+.env.*
+!.env.example
+!.env.*.example
 
 # Sensitive config files (never commit these)
 dev/New Text Document.txt

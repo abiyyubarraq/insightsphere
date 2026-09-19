@@ -9,6 +9,7 @@ import {
 } from "../../lib/supabaseClient.ts";
 import { openaiClient } from "../../lib/openaiClient.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
+import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
 import {
   chunkPages,
   createChunkId,
@@ -146,6 +147,15 @@ async function runPipeline(
     console.log(`Downloading file: ${document.storage_path}`);
     const fileData = await supabaseService.downloadFile(document.storage_path);
 
+    // The browser checks this too, but that check is skippable: uploads go
+    // directly to Supabase Storage without passing through here.
+    if (fileData.data.length > MAX_FILE_BYTES) {
+      throw new Error(
+        `File is ${(fileData.data.length / 1024 / 1024).toFixed(1)}MB, over the ` +
+          `${MAX_FILE_BYTES / 1024 / 1024}MB limit`,
+      );
+    }
+
     // Create temporary file for Go parser
     tempFilePath = await supabaseService.createTempFile(
       fileData.data,
@@ -185,6 +195,12 @@ async function runPipeline(
     }
 
     const parseResult: DocParserResponse = await parseResponse.json();
+
+    if ((parseResult.pages?.length ?? 0) > MAX_PAGES) {
+      throw new Error(
+        `Document has ${parseResult.pages.length} pages, over the ${MAX_PAGES} page limit`,
+      );
+    }
 
     if (parseResult.error) {
       throw new Error(`Parser error: ${parseResult.error}`);

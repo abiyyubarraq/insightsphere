@@ -1,53 +1,83 @@
 <script lang="ts">
   import { marked } from 'marked';
+  import DOMPurify from 'isomorphic-dompurify';
 
-  let { content, messageId } = $props<{
+  let { content, messageId, oncitation } = $props<{
     content: string;
     messageId: string;
+    oncitation?: (messageId: string, citationIndex: number) => void;
   }>();
 
-  // Function to render markdown content with clickable citations
-  const renderMarkdown = (content: string, messageId: string): string => {
+  /**
+   * Renders assistant markdown.
+   *
+   * The output is model-generated from document text, so it is untrusted: a
+   * document can ask the model to reproduce markup, and marked passes inline
+   * HTML through by design. Everything is sanitised before it reaches {@html}.
+   *
+   * Citations are plain buttons carrying data attributes, handled by one
+   * listener on the wrapper. They used to carry an inline onclick calling a
+   * function hung off window, which required script-src 'unsafe-inline' and so
+   * made a CSP impossible.
+   */
+  const renderMarkdown = (raw: string): string => {
     try {
-      const result = marked(content, {
-        breaks: true, // Convert line breaks to <br>
-        gfm: true, // GitHub Flavored Markdown
-      });
+      const result = marked(raw, { breaks: true, gfm: true });
+      let html = typeof result === 'string' ? result : raw;
 
-      // Handle both string and Promise<string> return types
-      let htmlContent = typeof result === 'string' ? result : content;
-
-      // Replace [doc_id: X] or [doc_id: X, Y] with clickable links
-      htmlContent = htmlContent.replace(/\[doc_id:\s*(\d+(?:,\s*\d+)*)\]/g, (match, ids) => {
-        const idList = ids.split(',').map((id: string) => id.trim());
-        return idList
+      html = html.replace(/\[doc_id:\s*(\d+(?:,\s*\d+)*)\]/g, (_match, ids: string) =>
+        ids
+          .split(',')
           .map((id: string) => {
-            const citationIndex = parseInt(id) - 1; // Convert to 0-based index
-            return `<button 
-              class="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-primary text-primary-content rounded-full mx-0.5 hover:bg-primary-focus transition-colors cursor-pointer" 
-              onclick="window.handleCitationClick('${messageId}', ${citationIndex})"
-              title="View source ${parseInt(id)}"
-            >${id}</button>`;
+            const n = parseInt(id.trim(), 10);
+            if (!Number.isFinite(n)) return '';
+            return `<button type="button" class="citation-chip" data-citation-index="${n - 1}" title="View source ${n}">${n}</button>`;
           })
-          .join('');
-      });
+          .join('')
+      );
 
-      return htmlContent;
+      return DOMPurify.sanitize(html, {
+        ADD_ATTR: ['data-citation-index'],
+        USE_PROFILES: { html: true },
+      });
     } catch (error) {
       console.error('Markdown rendering error:', error);
-      return content; // Fallback to plain text
+      return DOMPurify.sanitize(raw);
     }
+  };
+
+  const onWrapperClick = (event: MouseEvent) => {
+    const target = (event.target as HTMLElement)?.closest<HTMLElement>('[data-citation-index]');
+    if (!target) return;
+    const index = Number(target.dataset.citationIndex);
+    if (Number.isFinite(index)) oncitation?.(messageId, index);
   };
 </script>
 
-<div class="chat-markdown">
-  {@html renderMarkdown(content, messageId)}
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="chat-markdown" onclick={onWrapperClick}>
+  {@html renderMarkdown(content)}
 </div>
 
 <style>
   .chat-markdown {
     color: inherit;
     line-height: 1.6;
+  }
+
+  .chat-markdown :global(.citation-chip) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin: 0 0.125rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: pointer;
+    background-color: var(--color-primary, #8b5cf6);
+    color: var(--color-primary-content, #fff);
   }
 
   /* Headers */

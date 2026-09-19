@@ -1,0 +1,24 @@
+# The build context is the repo root, so without this every build uploads
+# node_modules, the git history and previous build output.
+**/node_modules
+**/.svelte-kit
+**/build
+**/dist
+.git
+.github
+
+# Never let a real secrets file into an image layer.
+**/.env
+**/.env.*
+!**/.env.*.example
+
+# Local-only
+dev/
+docs/
+.claude/
+.cursor/
+**/*.exe
+doc-parser/doc-parser
+scripts/
+*.md
+!README.md
