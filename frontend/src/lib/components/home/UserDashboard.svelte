@@ -166,7 +166,9 @@
     }
 
     // Validate all files first
-    const allowedTypes = ['.pdf', '.doc', '.docx', '.txt'];
+    // .doc is deliberately absent: it is a different, binary format that the
+    // parser cannot read, and accepting it only fails after the upload.
+    const allowedTypes = ['.pdf', '.docx', '.txt', '.md'];
     const maxSize = 100 * 1024 * 1024; // 100MB in bytes
 
     for (let i = 0; i < files.length; i++) {
@@ -175,7 +177,7 @@
       // Validate file type
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (!allowedTypes.includes(fileExtension)) {
-        errorNotif = `File "${file.name}" is not a valid type (PDF, DOC, DOCX, or TXT)`;
+        errorNotif = `File "${file.name}" is not a supported type (PDF, DOCX, TXT or MD)`;
         return;
       }
 
@@ -525,7 +527,7 @@
   type="file"
   bind:this={fileInput}
   onchange={handleFileUpload}
-  accept=".pdf,.doc,.docx,.txt"
+  accept=".pdf,.docx,.txt,.md"
   multiple
   class="hidden"
 />

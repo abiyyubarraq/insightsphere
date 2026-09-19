@@ -69,13 +69,56 @@ func NewRouter() *gin.Engine {
 		})
 	})
 
+	r.POST("/parse/docx", func(c *gin.Context) {
+		var req ParseRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			log.Printf("Invalid request: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		log.Printf("Parsing DOCX: %s", req.FilePath)
+
+		// No OCR and no rendering, so this needs neither workers nor a timeout
+		// the way the PDF path does.
+		pages, meta, err := handlers.ParseDOCX(req.FilePath)
+		if err != nil {
+			log.Printf("DOCX parsing failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, ParseResponse{Pages: pages, Meta: meta})
+	})
+
+	// .txt and .md. No extraction step: the bytes are already the text.
+	r.POST("/parse/text", func(c *gin.Context) {
+		var req ParseRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			log.Printf("Invalid request: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		log.Printf("Reading text file: %s", req.FilePath)
+
+		pages, meta, err := handlers.ParseText(req.FilePath)
+		if err != nil {
+			log.Printf("Text parsing failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, ParseResponse{Pages: pages, Meta: meta})
+	})
+
 	r.GET("/info", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"service":     "doc-parser",
 			"version":     "2.1.0-ocr",
-			"methods":     []string{"PDF-to-Image-OCR"},
+			"methods":     []string{"PDF-to-Image-OCR", "DOCX-XML", "plain-text"},
 			"engines":     []string{"poppler-utils", "tesseract-ocr"},
-			"formats":     []string{"pdf"},
+			"formats":     []string{"pdf", "docx", "text"},
 			"max_timeout": "20 minutes",
 		})
 	})
@@ -100,5 +143,7 @@ func main() {
 	log.Printf("   GET  /health     - Health check")
 	log.Printf("   GET  /info       - Service information")
 	log.Printf("   POST /parse/pdf  - PDF OCR parsing (returns text + PNG image paths)")
+	log.Printf("   POST /parse/docx - DOCX text extraction")
+	log.Printf("   POST /parse/text - plain text and markdown")
 	log.Fatal(r.Run(":" + port))
 }

@@ -161,14 +161,22 @@ async function runPipeline(
 
     // Determine file type and call appropriate parser endpoint
     const fileExtension = document.file_name.toLowerCase().split(".").pop();
-    let parserEndpoint: string;
+    // Only PDF goes through OCR. DOCX and plain text already contain their
+    // text, so they take much cheaper paths.
+    const PARSER_ROUTES: Record<string, string> = {
+      pdf: "/parse/pdf",
+      docx: "/parse/docx",
+      txt: "/parse/text",
+      md: "/parse/text",
+      markdown: "/parse/text",
+    };
 
-    if (fileExtension === "pdf") {
-      parserEndpoint = "/parse/pdf";
-    } else if (fileExtension === "docx") {
-      parserEndpoint = "/parse/docx";
-    } else {
-      throw new Error(`Unsupported file type: ${fileExtension}`);
+    const parserEndpoint = PARSER_ROUTES[fileExtension ?? ""];
+    if (!parserEndpoint) {
+      throw new Error(
+        `Unsupported file type: ${fileExtension ?? "unknown"}. ` +
+          `Supported: ${Object.keys(PARSER_ROUTES).join(", ")}`,
+      );
     }
 
     // Call Go document parser

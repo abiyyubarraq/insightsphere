@@ -5,7 +5,7 @@ export * from "./chat.ts";
 export interface Document {
   id: string;
   fileName: string;
-  fileType: "pdf" | "docx";
+  fileType: "pdf" | "docx" | "txt" | "md";
   uploadedAt: string;
   size: number;
   userId: string;
