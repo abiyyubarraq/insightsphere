@@ -15,7 +15,6 @@
 	"imports": {
 		"@std/assert": "jsr:@std/assert@^1.0.0",
 		"@std/uuid": "jsr:@std/uuid@^1.0.9",
-		"@huggingface/inference": "npm:@huggingface/inference@^4.7.1",
 		"hono": "npm:hono@^4.0.0",
 		"hono/cors": "npm:hono@^4.0.0/cors",
 		"hono/logger": "npm:hono@^4.0.0/logger",

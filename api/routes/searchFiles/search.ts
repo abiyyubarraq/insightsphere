@@ -7,14 +7,13 @@ import type { Context } from "hono";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import type { ListFilesResponse } from "../../../shared/types/index.ts";
 import { handleSemanticSearch } from "./semanticSearch.ts";
-import { handleTypesenseSearch } from "./typesenseSearch.ts";
 import { handleFilenameSearch } from "./fileNameSearch.ts";
 
 export interface ListFilesRequest {
   limit?: number;
   offset?: number;
   searchQuery?: string;
-  searchMode?: "filename" | "semantic" | "typesense";
+  searchMode?: "filename" | "semantic";
   projectIds?: string[];
 }
 
@@ -78,15 +77,6 @@ export async function searchFiles(c: Context) {
     switch (searchMode) {
       case "semantic":
         result = await handleSemanticSearch(user.id, {
-          limit,
-          offset,
-          searchQuery: searchQuery.trim() || undefined,
-          projectIds: projectIds.length > 0 ? projectIds : undefined,
-        });
-        break;
-
-      case "typesense":
-        result = await handleTypesenseSearch(user.id, {
           limit,
           offset,
           searchQuery: searchQuery.trim() || undefined,

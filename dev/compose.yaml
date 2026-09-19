@@ -70,7 +70,6 @@ services:
     volumes:
       - ../api:/app
       - ../shared:/shared
-      - ../vector-utils:/vector-utils
       - shared_temp:/tmp
     deploy:
       resources:
