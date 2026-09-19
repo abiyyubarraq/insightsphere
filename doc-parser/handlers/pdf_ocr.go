@@ -23,6 +23,8 @@ type PageData struct {
 
 type PipelineMetrics struct {
 	SuccessfulPages    int
+	// Pages answered from the PDF text layer instead of OCR.
+	TextLayerPages     int
 	TotalDuration      time.Duration
 	ConversionDuration time.Duration
 	OCRDuration        time.Duration
@@ -55,7 +57,12 @@ func ParsePDFWithOCR(ctx context.Context, filePath string) ([]PageData, map[stri
 	
 	log.Printf("📂 Temp directory: %s", tempDir)
 
-	text, pages, imagePaths, metrics, err := streamingOCRPipeline(ctx, filePath, tempDir, pageCount)
+	// Read what the PDF already contains before rendering anything. A file
+	// that carries its own text does not need to be read back out of a picture.
+	textLayer := utils.ExtractTextLayer(ctx, filePath)
+	log.Printf("📄 Text layer present on %d of %d pages", len(textLayer), pageCount)
+
+	text, pages, imagePaths, metrics, err := streamingOCRPipeline(ctx, filePath, tempDir, pageCount, textLayer)
 	if err != nil {
 		os.RemoveAll(tempDir)
 		return nil, nil, nil, "", err
@@ -88,7 +95,9 @@ func ParsePDFWithOCR(ctx context.Context, filePath string) ([]PageData, map[stri
 		"pages":             pageCount,
 		"successfulPages":   successfulPages,
 		"size":              utils.GetFileSize(filePath),
-		"extractionMethod":  "ocr-streaming",
+		"extractionMethod":  extractionMethod(metrics),
+		"textLayerPages":    metrics.TextLayerPages,
+		"ocrPages":          pageCount - metrics.TextLayerPages,
 		"textLength":        len(text),
 		"ocrEngine":         "tesseract",
 		"ocrLanguages":      utils.OCRLanguages(),
@@ -106,7 +115,7 @@ func ParsePDFWithOCR(ctx context.Context, filePath string) ([]PageData, map[stri
 	return pages, metadata, imagePaths, tempDir, nil
 }
 
-func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCount int) (string, []PageData, map[int]string, PipelineMetrics, error) {
+func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCount int, textLayer map[int]string) (string, []PageData, map[int]string, PipelineMetrics, error) {
 
 	conversionWorkers := min(3, pageCount)  
 	ocrWorkers := min(3, pageCount)         
@@ -127,6 +136,7 @@ func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCoun
 		text      string
 		imagePath string 
 		duration  time.Duration
+		fromLayer bool
 		err       error
 	}
 
@@ -136,6 +146,7 @@ func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCoun
 
 	var wg sync.WaitGroup
 	var totalConversionTime, totalOCRTime time.Duration
+	var textLayerPages int
 	var convMu, ocrMu sync.Mutex
 
 	for w := 0; w < conversionWorkers; w++ {
@@ -188,6 +199,23 @@ func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCoun
 				default:
 				}
 
+				// The page is still rendered above, because citations open the page
+				// image. Only the reading of it is skipped, and that is the part
+				// that costs minutes.
+				if layer, ok := textLayer[img.pageNum]; ok && utils.HasUsableText(layer) {
+					ocrMu.Lock()
+					textLayerPages++
+					ocrMu.Unlock()
+
+					resultsChan <- ocrResult{
+						pageNum:   img.pageNum,
+						text:      layer,
+						imagePath: img.imagePath,
+						fromLayer: true,
+					}
+					continue
+				}
+
 				startOCR := time.Now()
 				text, err := performOCR(ctx, img.imagePath)
 				ocrDuration := time.Since(startOCR)
@@ -231,7 +259,11 @@ func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCoun
 		if result.err != nil {
 			log.Printf("⚠️ Page %d error: %v", result.pageNum, result.err)
 		} else {
-			log.Printf("📝 Page %d: %d chars (OCR: %v)", result.pageNum, len(result.text), result.duration)
+			source := fmt.Sprintf("OCR: %v", result.duration)
+			if result.fromLayer {
+				source = "text layer"
+			}
+			log.Printf("📝 Page %d: %d chars (%s)", result.pageNum, len(result.text), source)
 		}
 	}
 
@@ -269,6 +301,7 @@ func streamingOCRPipeline(ctx context.Context, pdfPath, tempDir string, pageCoun
 		PagesProcessed:     pageCount,
 		ConversionDuration: totalConversionTime,
 		OCRDuration:        totalOCRTime,
+		TextLayerPages:     textLayerPages,
 	}
 	if pageCount > 0 {
 		metrics.AvgConversionTime = totalConversionTime / time.Duration(pageCount)
@@ -349,6 +382,19 @@ func ParsePDFWithOCRBatch(ctx context.Context, filePath string) ([]PageData, map
 
 	log.Printf("🖼️ Returning %d PNG paths for upload", len(imagePaths))
 	return pages, metadata, imagePaths, tempDir, nil
+}
+
+// What the metadata should say the text came from. A file is rarely all one
+// or all the other: a scanned appendix inside a digital report is normal.
+func extractionMethod(m PipelineMetrics) string {
+	switch {
+	case m.TextLayerPages == 0:
+		return "ocr"
+	case m.TextLayerPages >= m.PagesProcessed:
+		return "text-layer"
+	default:
+		return "text-layer+ocr"
+	}
 }
 
 func min(a, b int) int {

@@ -29,6 +29,9 @@ interface DocParserResponse {
     size: number;
     extractionMethod?: string;
     textLength?: number;
+    /** How the pages were read. A file is rarely all one or all the other. */
+    textLayerPages?: number;
+    ocrPages?: number;
   };
   imagePaths?: Record<number, string>; // page_number -> temp file path
   imagesDir?: string; // temp directory for cleanup
@@ -287,6 +290,8 @@ async function runPipeline(
     const parseMetadata = {
       pageCount: parseResult.pages?.length || 0,
       extractionMethod: parseResult.meta?.extractionMethod || "ocr",
+      textLayerPages: parseResult.meta?.textLayerPages,
+      ocrPages: parseResult.meta?.ocrPages,
     };
 
     const embeddingModel = "text-embedding-3-small";
@@ -452,6 +457,8 @@ async function runPipeline(
       processedAt: new Date().toISOString(),
       tokensUsed: totalTokens,
       extractionMethod: parseMetadata.extractionMethod,
+      textLayerPages: parseMetadata.textLayerPages,
+      ocrPages: parseMetadata.ocrPages,
     };
 
     await supabaseService.updateDocument(document_id, {
