@@ -228,7 +228,8 @@ tested, so pure logic goes in its own module — see `api/lib/retrieval.ts` and
 
 ## Agents
 
-Task-specific playbooks live in [.claude/agents/](.claude/agents/):
+Task-specific playbooks live in `.claude/agents/`, which is local only and not
+in the repo (`.claude/`, `.mcp.json` and `.env` files are gitignored):
 code-reviewer, design-reviewer, planning-specialist, research-specialist,
 senior-developer, ui-specialist, rag-specialist, embedding-specialist,
 go-service-specialist, microservices-coordinator.
