@@ -25,7 +25,7 @@ Ingestion, in order:
 
 1. The browser uploads to Supabase Storage and inserts a row in `project_files`.
 2. `POST /v1/documents/process` checks ownership and returns **202** straight away.
-3. In the background: a PDF is rendered to PNG per page and OCR'd; DOCX text is read out of its XML; plain text is read as-is. Only PDF needs OCR.
+3. In the background: a PDF hands over the text it already carries, page by page, and only the pages that carry none are rendered and OCR'd; DOCX text is read out of its XML; plain text is read as-is.
 4. Pages are chunked to roughly 800 tokens, embedded with `text-embedding-3-small`, and upserted into that project's Qdrant collection.
 5. The row moves to `ready`, or to `failed` with the reason recorded. The UI polls until then.
 
@@ -40,6 +40,8 @@ A follow-up question is rewritten into one that stands on its own before it is s
 **One Qdrant collection per project**, named `insightsphere-documents_user_{userId}_project_{projectId}`. Leaking across tenants would take the wrong collection name rather than a forgotten `WHERE` clause, and deleting a project becomes a single call. The cost is that search cannot span projects.
 
 **Chunk IDs are deterministic** — a UUID v5 over `documentId_page_chunkIndex`. Qdrant upserts by point ID, so reprocessing replaces chunks rather than adding more. An earlier version returned a random UUID from a function whose name promised otherwise, which left 43% of the vector store as duplicates and meant a top-5 search could come back as the same paragraph five times.
+
+**OCR is the fallback, not the default.** Most PDFs hold their own text, so it is taken directly and only pages that come back empty — a scan, a full-page figure — are rendered and read by tesseract. On a 14 page article that is 7 seconds instead of 136, and the text is exact rather than tesseract's reading of a picture of it. The decision is per page, because a scanned appendix inside a digital report is ordinary.
 
 **Only PDF pays for OCR.** DOCX already holds its text in `word/document.xml`, and `.txt`/`.md` are text already, so both skip rendering entirely and finish in under a second. Markdown is kept as written rather than stripped: `## Results` is a better chunk boundary and a better embedding than `Results` on its own. Neither format records page breaks, so their citations name the file but not a page.
 

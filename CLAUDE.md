@@ -63,6 +63,7 @@ new code — import it.
 | Context length cap | 4000 chars | same |
 | Max file size | 100 MB, enforced in the browser *and* in the API | same |
 | Max pages | 1000 | same |
+| Text layer floor | 20 runes and 10 letters per page, below which the page goes to OCR | `doc-parser/utils/text_layer.go` |
 | Storage bucket | `SUPABASE_STORAGE_BUCKET`, default `anotherbrainfileplayground` | `api/lib/config.ts` |
 | Storage path | `{userId}/{projectId}/{timestamp}_{filename}` | `frontend/src/services/supabase.ts` |
 
@@ -104,7 +105,8 @@ POST /v1/documents/process  -> 202 immediately, client polls status
         |
    background: ownership check, download by the path ON THE ROW
         |
-   doc-parser: PDF -> greyscale PNG per page -> tesseract
+   doc-parser: PDF -> text layer per page, and ONLY pages with none
+                      -> greyscale PNG -> tesseract
                DOCX -> word/document.xml     (no OCR)
                txt/md -> read as-is           (no OCR)
         |
