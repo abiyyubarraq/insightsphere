@@ -7,6 +7,13 @@ import type { Context } from "hono";
 import { type RAGQueryOptions, ragService } from "../../lib/ragService.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
+import { currentUser } from "../../lib/auth.ts";
+import {
+  consumeQuota,
+  quotaExceeded,
+  QuotaUnavailableError,
+  quotaUnavailable,
+} from "../../lib/quotaService.ts";
 
 interface QueryRequest {
   query: string;
@@ -40,6 +47,7 @@ interface QueryResponse {
 export async function queryProject(c: Context) {
   try {
     const startTime = Date.now();
+    const user = currentUser(c);
 
     // Extract project ID from URL parameters
     const projectId = c.req.param("projectId");
@@ -65,20 +73,6 @@ export async function queryProject(c: Context) {
       `🔍 RAG Query Request - Project: ${projectId}, Query: "${query}"`,
     );
 
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ success: false, error: "Unauthorized" }, 401);
-    }
-
-    let user: { id: string; email?: string };
-    try {
-      user = await supabaseService.getUserFromToken(
-        authHeader.slice("Bearer ".length),
-      );
-    } catch {
-      return c.json({ success: false, error: "Unauthorized" }, 401);
-    }
-
     const hasAccess = await supabaseService.userHasProjectAccess(
       user.id,
       projectId,
@@ -89,6 +83,11 @@ export async function queryProject(c: Context) {
         403,
       );
     }
+
+    // The same answer as a chat message at the same cost, so it draws on the
+    // same budget. Otherwise this route is a way around the chat limit.
+    const quota = await consumeQuota(user.id, "chat");
+    if (!quota.allowed) return quotaExceeded(c, "chat", quota.limit);
 
     console.log(`👤 User: ${user.id} querying project: ${projectId}`);
 
@@ -134,6 +133,10 @@ export async function queryProject(c: Context) {
 
     return c.json(response);
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) {
+      console.error(error.message);
+      return quotaUnavailable(c);
+    }
     console.error("RAG query endpoint failed:", error);
 
     return c.json({
@@ -148,7 +151,7 @@ export async function queryProject(c: Context) {
  * Get query suggestions based on project content
  * GET /v1/projects/:projectId/query/suggestions
  */
-export function getQuerySuggestions(c: Context) {
+export async function getQuerySuggestions(c: Context) {
   try {
     const projectId = c.req.param("projectId");
     if (!projectId) {
@@ -156,6 +159,17 @@ export function getQuerySuggestions(c: Context) {
         success: false,
         error: "Project ID is required",
       }, 400);
+    }
+
+    const hasAccess = await supabaseService.userHasProjectAccess(
+      currentUser(c).id,
+      projectId,
+    );
+    if (!hasAccess) {
+      return c.json(
+        { success: false, error: "Access denied to this project" },
+        403,
+      );
     }
 
     // For now, return static suggestions

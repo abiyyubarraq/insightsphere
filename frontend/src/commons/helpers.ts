@@ -2,7 +2,7 @@
 export const withLoading = async (
   operation: () => Promise<unknown>,
   setLoading: (loading: boolean) => void,
-  setError: (error: string) => void
+  setError: (message: string, error?: unknown) => void
 ) => {
   setLoading(true);
   setError('');
@@ -10,7 +10,7 @@ export const withLoading = async (
     return await operation();
   } catch (e) {
     const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
-    setError(errorMessage);
+    setError(errorMessage, e);
     return null;
   } finally {
     setLoading(false);

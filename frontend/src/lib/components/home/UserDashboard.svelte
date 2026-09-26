@@ -18,6 +18,7 @@
     downloadFile,
     processDocument,
     generateDocumentSummary,
+    isLimitError,
   } from '../../../services/supabase';
   import { withLoading } from '../../../commons/helpers';
   import { ConfirmationDialog, SummaryMarkdown } from '../common';
@@ -40,6 +41,14 @@
   let error = $state('');
   let uploadLoading = $state(false);
   let errorNotif = $state('');
+  let errorTone: 'error' | 'warning' = $state('error');
+
+  // Every other message is an error, so the tone is reset whenever the text
+  // changes and only a limit sets it to warning.
+  const showError = (message: string, error?: unknown) => {
+    errorNotif = message;
+    errorTone = isLimitError(error) ? 'warning' : 'error';
+  };
   let successNotif = $state('');
   let fileInput: HTMLInputElement | undefined = $state();
   let uploadedFiles: ProjectFile[] = $state([]);
@@ -79,7 +88,20 @@
       const project = $selectedProject;
       if (!project || !$user) return;
       try {
+        const before = uploadedFiles;
         uploadedFiles = await getProjectFiles(project.id, $user.id);
+        // Some failures, such as running out of daily pages, are only known once
+        // the background work has read the file, so this is the only place the
+        // reason can reach the user.
+        const failed = uploadedFiles.find(
+          (f) =>
+            f.status === 'failed' &&
+            f.processing_error &&
+            before.some((b) => b.id === f.id && b.status === 'processing')
+        );
+        if (failed?.processing_error) {
+          showError(`${failed.file_name}: ${failed.processing_error}`);
+        }
       } catch {
         // A failed poll is not worth surfacing; the next one will retry.
       }
@@ -169,7 +191,7 @@
 
     if (!files || files.length === 0) return;
     if (!$selectedProject || !$user) {
-      errorNotif = 'Please select a project first';
+      showError('Please select a project first');
       return;
     }
 
@@ -185,13 +207,13 @@
       // Validate file type
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (!allowedTypes.includes(fileExtension)) {
-        errorNotif = `File "${file.name}" is not a supported type (PDF, DOCX, TXT or MD)`;
+        showError(`File "${file.name}" is not a supported type (PDF, DOCX, TXT or MD)`);
         return;
       }
 
       // Validate file size
       if (file.size > maxSize) {
-        errorNotif = `File "${file.name}" is too large (must be less than 100MB)`;
+        showError(`File "${file.name}" is too large (must be less than 100MB)`);
         return;
       }
     }
@@ -218,9 +240,7 @@
       (loadingState) => {
         uploadLoading = loadingState;
       },
-      (errorMsg) => {
-        errorNotif = errorMsg;
-      }
+      (errorMsg, error) => showError(errorMsg, error)
     );
   };
 
@@ -247,9 +267,7 @@
       (loadingState) => {
         removingFileLoading[file.id] = loadingState;
       },
-      (errorMsg) => {
-        errorNotif = errorMsg;
-      }
+      (errorMsg, error) => showError(errorMsg, error)
     );
 
     // Close dialog and reset state
@@ -267,7 +285,7 @@
     try {
       await downloadFile(storagePath);
     } catch (error) {
-      errorNotif = error instanceof Error ? error.message : 'Failed to download file';
+      showError(error instanceof Error ? error.message : 'Failed to download file');
     } finally {
       downloadingFileLoading[fileId] = false;
     }
@@ -290,7 +308,7 @@
     const file = uploadedFiles.find((f) => f.id === fileId);
 
     if (!file || !$selectedProject || !$user) {
-      errorNotif = 'File or project not found';
+      showError('File or project not found');
       return;
     }
 
@@ -304,9 +322,7 @@
       (loadingState) => {
         processingFileLoading[fileId] = loadingState;
       },
-      (errorMsg) => {
-        errorNotif = errorMsg;
-      }
+      (errorMsg, error) => showError(errorMsg, error)
     );
   };
 
@@ -315,7 +331,7 @@
     const file = uploadedFiles.find((f) => f.id === fileId);
 
     if (!file || !$selectedProject || !$user) {
-      errorNotif = 'File or project not found';
+      showError('File or project not found');
       return;
     }
 
@@ -328,9 +344,7 @@
       (loadingState) => {
         processingFileLoading[fileId] = loadingState;
       },
-      (errorMsg) => {
-        errorNotif = errorMsg;
-      }
+      (errorMsg, error) => showError(errorMsg, error)
     );
   };
 
@@ -348,10 +362,10 @@
         currentSummaryFileName = file.file_name;
         showSummaryModal = true;
       } else {
-        errorNotif = 'Summary not found for this file';
+        showError('Summary not found for this file');
       }
     } catch (error) {
-      errorNotif = error instanceof Error ? error.message : 'Failed to load summary';
+      showError(error instanceof Error ? error.message : 'Failed to load summary');
     }
   };
 
@@ -360,7 +374,7 @@
     const project = $selectedProject;
 
     if (!project) {
-      errorNotif = 'No project selected';
+      showError('No project selected');
       return;
     }
 
@@ -394,7 +408,7 @@
         throw new Error(result.error || 'Failed to generate summary');
       }
     } catch (error) {
-      errorNotif = error instanceof Error ? error.message : 'Failed to generate summary';
+      showError(error instanceof Error ? error.message : 'Failed to generate summary', error);
     } finally {
       generatingSummaryLoading[fileId] = false;
     }
@@ -585,6 +599,7 @@
     bind:leftSidebarOpen
     bind:rightSidebarOpen
     bind:errorNotif
+    {errorTone}
     bind:successNotif
     bind:uploadLoading
     bind:fileFilter

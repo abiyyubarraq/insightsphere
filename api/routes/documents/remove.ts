@@ -7,7 +7,7 @@
  */
 
 import type { Context } from "hono";
-import { getAuthUser } from "../../lib/auth.ts";
+import { currentUser } from "../../lib/auth.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { qdrantService } from "../../lib/qdrantClient.ts";
 
@@ -17,8 +17,7 @@ export async function deleteDocument(c: Context) {
     return c.json({ success: false, error: "Document ID is required" }, 400);
   }
 
-  const user = await getAuthUser(c);
-  if (!user) return c.json({ success: false, error: "Unauthorized" }, 401);
+  const user = currentUser(c);
 
   let document;
   try {

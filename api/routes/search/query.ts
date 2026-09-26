@@ -3,6 +3,7 @@ import { qdrantService } from "../../lib/qdrantClient.ts";
 import { openaiClient } from "../../lib/openaiClient.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
+import { currentUser } from "../../lib/auth.ts";
 
 interface SearchRequest {
   query: string;
@@ -43,19 +44,7 @@ export async function searchDocuments(c: Context) {
 
     console.log(`🔍 Searching in project: ${project_id} for query: "${query}"`);
 
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-
-    let user: { id: string; email?: string };
-    try {
-      user = await supabaseService.getUserFromToken(
-        authHeader.slice("Bearer ".length),
-      );
-    } catch {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
+    const user = currentUser(c);
 
     const hasAccess = await supabaseService.userHasProjectAccess(
       user.id,

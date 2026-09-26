@@ -42,6 +42,33 @@ for t in projects project_files; do
   esac
 done
 
+echo "== quota tables and function are API-only =="
+# RLS on with no policy: anon gets an empty list or a permission error, never rows.
+for t in quota_tiers user_tiers usage_counters; do
+  # A missing table also returns no rows, so only an empty list or a
+  # permission error (42501) counts as a pass.
+  body=$(curl -s "$URL/rest/v1/$t?select=*" -H "apikey: $ANON")
+  case "$body" in
+    "[]"|*'"42501"'*) ok "$t: anon reads nothing" ;;
+    *'"42P01"'*)      bad "$t: table missing (0006_quota.sql not applied)" ;;
+    *)                bad "$t: anon got: $(printf '%s' "$body" | head -c 80)" ;;
+  esac
+done
+# 42501 = permission denied. A 404 (PGRST202) would mean the function is
+# missing, which is not a pass.
+resp=$(curl -s -w '\n%{http_code}' -X POST "$URL/rest/v1/rpc/consume_quota" -H "apikey: $ANON" \
+    -H "Content-Type: application/json" \
+    -d '{"p_user_id":"00000000-0000-0000-0000-000000000000","p_kind":"chat","p_amount":1}')
+s=$(printf '%s' "$resp" | tail -1)
+case "$resp" in
+  *'"42501"'*) ok "consume_quota: anon call rejected (42501)" ;;
+  *)           bad "consume_quota: anon call -> $s (expected permission denied)" ;;
+esac
+
+echo "== every API route needs a token =="
+s=$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/projects/00000000-0000-0000-0000-000000000000/query/suggestions")
+[ "$s" = "401" ] && ok "suggestions without token -> 401" || bad "suggestions without token -> $s (expected 401)"
+
 echo "== removed endpoints must be gone =="
 for p in /v1/test/config /v1/test/dashboard /v1/test/rag-query; do
   s=$(curl -s -o /dev/null -w '%{http_code}' "$API$p")

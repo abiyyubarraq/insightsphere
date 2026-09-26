@@ -14,15 +14,17 @@
     sendChatMessage,
     getConversationHistory,
     deleteConversationHistory,
+    isLimitError,
   } from '../../../services/supabase';
   import type { ChatMessage } from '../../../../../shared/types/chat';
-  import { ConfirmationDialog } from '../common';
+  import { ConfirmationDialog, NoticeBanner } from '../common';
   import ChatMarkdown from './ChatMarkdown.svelte';
 
   let {
     leftSidebarOpen = $bindable(),
     rightSidebarOpen = $bindable(),
     errorNotif = $bindable(),
+    errorTone = 'error',
     successNotif = $bindable(),
     uploadLoading = $bindable(),
     fileFilter = $bindable(),
@@ -35,6 +37,7 @@
     leftSidebarOpen?: boolean;
     rightSidebarOpen?: boolean;
     errorNotif?: string;
+    errorTone?: 'error' | 'warning';
     successNotif?: string;
     uploadLoading?: boolean;
     fileFilter?: string;
@@ -51,6 +54,7 @@
   let conversationId: string | undefined = $state(undefined);
   let chatLoading = $state(false);
   let chatError = $state('');
+  let chatErrorTone: 'error' | 'warning' = $state('error');
   let messagesContainer: HTMLDivElement | undefined = $state();
   let loadingHistory = $state(false);
   let loadedProjectId: string | undefined = $state(undefined);
@@ -146,6 +150,7 @@
     } catch (error) {
       console.error('Failed to send message:', error);
       chatError = error instanceof Error ? error.message : 'Failed to send message';
+      chatErrorTone = isLimitError(error) ? 'warning' : 'error';
 
       // Remove loading placeholder on error
       chatMessages = chatMessages.filter((m) => m.id !== tempAssistantMessage.id);
@@ -254,15 +259,8 @@
 >
   <!-- Error Notification Display -->
   {#if errorNotif}
-    <div class="flex justify-center mt-4">
-      <div class="alert alert-error w-auto max-w-md relative pr-10">
-        <span class="text-center flex-1">{errorNotif}</span>
-        <div class="absolute top-2.5 right-2.5">
-          <button class="btn btn-xs btn-ghost" onclick={onClearErrorNotif}>
-            <X class="w-3 h-3" />
-          </button>
-        </div>
-      </div>
+    <div class="mt-4 px-14">
+      <NoticeBanner message={errorNotif} tone={errorTone} ondismiss={onClearErrorNotif} />
     </div>
   {/if}
 
@@ -324,12 +322,14 @@
       <!-- Chat Interface -->
       <div class="flex flex-col min-h-0 ml-2">
         <!-- Chat Error Display -->
+        <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
         {#if chatError}
-          <div class="mx-6 flex justify-between gap-2 alert alert-error">
-            {chatError}
-            <button class="btn btn-sm btn-ghost" onclick={() => (chatError = '')}>
-              <X class="w-4 h-4" />
-            </button>
+          <div class="mt-4 px-14">
+            <NoticeBanner
+              message={chatError}
+              tone={chatErrorTone}
+              ondismiss={() => (chatError = '')}
+            />
           </div>
         {/if}
 

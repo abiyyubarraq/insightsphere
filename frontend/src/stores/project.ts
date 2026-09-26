@@ -16,6 +16,7 @@ export interface ProjectFile {
   file_id: string;
   status: null | 'processing' | 'ready' | 'failed';
   is_summary_exist: boolean;
+  processing_error?: string | null;
 }
 
 export const projects = writable<Project[]>([]);

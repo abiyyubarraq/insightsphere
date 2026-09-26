@@ -5,15 +5,24 @@ import {
 } from "../../../shared/types/index.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { ChatCompletionRequest, openaiClient } from "../../lib/openaiClient.ts";
+import { MAX_FILE_BYTES } from "../../lib/constants.ts";
+import { currentUser } from "../../lib/auth.ts";
+import {
+  consumeQuota,
+  quotaExceeded,
+  QuotaUnavailableError,
+  quotaUnavailable,
+} from "../../lib/quotaService.ts";
 
 export async function generateSummary(c: Context) {
   const startTime = Date.now();
   let tempFilePath: string | null = null;
   let uploadResponseId: string | null = null;
   try {
-    // Extract and validate request body
+    const user = currentUser(c);
     const body = await c.req.json();
     const { project_id, document_id }: DocumentProcessRequest = body;
+    const regenerate = body.regenerate === true;
 
     if (!project_id || !document_id) {
       return c.json(
@@ -22,29 +31,6 @@ export async function generateSummary(c: Context) {
           error: "Missing required fields: project_id, document_id",
         } as DocumentProcessResponse,
         400,
-      );
-    }
-
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return c.json(
-        {
-          success: false,
-          error: "Missing or invalid Authorization header",
-        } as DocumentProcessResponse,
-        401,
-      );
-    }
-
-    let user: { id: string; email?: string };
-    try {
-      user = await supabaseService.getUserFromToken(
-        authHeader.slice("Bearer ".length),
-      );
-    } catch {
-      return c.json(
-        { success: false, error: "Unauthorized" } as DocumentProcessResponse,
-        401,
       );
     }
 
@@ -65,11 +51,41 @@ export async function generateSummary(c: Context) {
       );
     }
 
+    // Each call is a full read of the file by the model, the most expensive
+    // single request in the app, so an existing summary is not redone by
+    // accident.
+    if (document.is_summary_exist && !regenerate) {
+      return c.json(
+        {
+          success: false,
+          error: "This document already has a summary.",
+        } as DocumentProcessResponse,
+        409,
+      );
+    }
+
+    // Charged before the download, so a caller over the limit cannot make the
+    // API pull a large file again and again. The size check below then costs a
+    // credit, but only a caller who skipped the browser's own check reaches it.
+    const quota = await consumeQuota(user.id, "summaries");
+    if (!quota.allowed) return quotaExceeded(c, "summaries", quota.limit);
+
     console.log(`Downloading file: ${document.storage_path}`);
     const fileData = await supabaseService.downloadFile(document.storage_path);
     console.log(
       `File downloaded: ${fileData.fileName}, size: ${fileData.data.length} bytes`
     );
+
+    if (fileData.data.length > MAX_FILE_BYTES) {
+      return c.json(
+        {
+          success: false,
+          error: `File is ${(fileData.data.length / 1024 / 1024).toFixed(1)}MB, ` +
+            `over the ${MAX_FILE_BYTES / 1024 / 1024}MB limit`,
+        } as DocumentProcessResponse,
+        413,
+      );
+    }
 
     tempFilePath = await supabaseService.createTempFile(
       fileData.data,
@@ -188,6 +204,10 @@ export async function generateSummary(c: Context) {
       200
     );
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) {
+      console.error(error.message);
+      return quotaUnavailable(c);
+    }
     console.error("Document processing failed:", error);
 
     // Clean up temporary file if it exists

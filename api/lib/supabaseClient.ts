@@ -1,4 +1,15 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  isAuthRetryableFetchError,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
+
+/**
+ * Supabase Auth could not be reached or failed on its side, so nothing is known
+ * about the token. Kept apart from an invalid token because the frontend signs
+ * the user out on 401, and a network blip must not do that.
+ */
+export class AuthUnavailableError extends Error {}
 
 export interface FileDownloadResult {
   data: Uint8Array;
@@ -14,6 +25,7 @@ export interface DocumentRecord {
   user_id: string;
   status: "uploading" | "processing" | "ready" | "failed";
   processing_error?: string | null;
+  is_summary_exist?: boolean | null;
   created_at: string;
   updated_at: string;
   metadata?: Record<string, unknown>;
@@ -213,6 +225,33 @@ export class SupabaseService {
   }
 
   /**
+   * Moves a document to "processing" unless it is already there.
+   *
+   * One conditional update rather than read-then-write: two requests arriving
+   * together would both read "ready" and both start a pipeline. Returns false
+   * when the document was already processing.
+   */
+  async claimForProcessing(documentId: string): Promise<boolean> {
+    const { data, error } = await this.client
+      .from("project_files")
+      .update({
+        status: "processing",
+        processing_error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", documentId)
+      // status has no default, so a fresh upload is null, and null <> x is not
+      // true in SQL: a plain neq would refuse every new document. An or= of
+      // is.null and neq does not work either, because PostgREST also applies
+      // it to the returned rows, which are already "processing" by then.
+      .filter("status", "isdistinct", "processing")
+      .select("id");
+
+    if (error) throw new Error(`Failed to claim document: ${error.message}`);
+    return (data?.length ?? 0) > 0;
+  }
+
+  /**
    * Validate user has access to project
    */
   async validateProjectAccess(
@@ -250,8 +289,20 @@ export class SupabaseService {
         error,
       } = await this.client.auth.getUser(token);
 
+      if (
+        error &&
+        (isAuthRetryableFetchError(error) || (error.status ?? 0) >= 500)
+      ) {
+        throw new AuthUnavailableError(
+          `${error.name} (status ${error.status ?? "none"}): ${error.message}`,
+        );
+      }
       if (error || !user) {
-        throw new Error("Invalid or expired token");
+        throw new Error(
+          `Invalid or expired token: ${error?.name ?? "no user"} (status ${
+            error?.status ?? "none"
+          })`,
+        );
       }
 
       return {
@@ -260,6 +311,11 @@ export class SupabaseService {
       };
     } catch (error) {
       console.error("Token validation failed:", error);
+      if (error instanceof AuthUnavailableError) throw error;
+      // A thrown fetch error is also a failure to reach Auth, not a bad token.
+      if (error instanceof TypeError) {
+        throw new AuthUnavailableError(error.message);
+      }
       throw new Error("Authentication failed");
     }
   }

@@ -18,6 +18,7 @@
 		"hono": "npm:hono@^4.0.0",
 		"hono/cors": "npm:hono@^4.0.0/cors",
 		"hono/logger": "npm:hono@^4.0.0/logger",
+		"hono-rate-limiter": "npm:hono-rate-limiter@~0.4.2",
 		"openai": "npm:openai@^4.0.0",
 		"qdrant-js": "npm:@qdrant/js-client-rest@^1.8.0",
 		"@supabase/supabase-js": "npm:@supabase/supabase-js@^2.38.0"

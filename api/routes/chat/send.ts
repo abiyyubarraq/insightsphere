@@ -17,6 +17,13 @@ import { supabaseService } from "../../lib/supabaseClient.ts";
 import { ragService } from "../../lib/ragService.ts";
 import { ChatService } from "../../lib/chatService.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
+import { currentUser } from "../../lib/auth.ts";
+import {
+  consumeQuota,
+  quotaExceeded,
+  QuotaUnavailableError,
+  quotaUnavailable,
+} from "../../lib/quotaService.ts";
 import type { HistoryTurn } from "../../lib/queryRewrite.ts";
 import type {
   SendMessageRequest,
@@ -26,6 +33,7 @@ import type {
 export async function sendChatMessage(c: Context) {
   try {
     const startTime = Date.now();
+    const user = currentUser(c);
     console.log("🔥 sendChatMessage function called!");
 
     // Extract project ID from URL
@@ -53,20 +61,6 @@ export async function sendChatMessage(c: Context) {
 
     console.log(`💬 Chat message request - Project: ${projectId}`);
 
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ success: false, error: "Unauthorized" }, 401);
-    }
-
-    let user: { id: string; email?: string };
-    try {
-      user = await supabaseService.getUserFromToken(
-        authHeader.slice("Bearer ".length),
-      );
-    } catch {
-      return c.json({ success: false, error: "Unauthorized" }, 401);
-    }
-
     // Verify user has access to project
     const hasAccess = await supabaseService.userHasProjectAccess(
       user.id,
@@ -79,6 +73,11 @@ export async function sendChatMessage(c: Context) {
         error: "Access denied to this project",
       }, 403);
     }
+
+    // Charged before anything is saved or sent to OpenAI. Not refunded if the
+    // answer later fails.
+    const quota = await consumeQuota(user.id, "chat");
+    if (!quota.allowed) return quotaExceeded(c, "chat", quota.limit);
 
     // Initialize chat service
     const chatService = new ChatService(supabaseService.getClient());
@@ -193,6 +192,10 @@ export async function sendChatMessage(c: Context) {
 
     return c.json(response);
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) {
+      console.error(error.message);
+      return quotaUnavailable(c);
+    }
     console.error("Chat message endpoint failed:", error);
 
     return c.json({

@@ -8,6 +8,29 @@ import { RETRIEVAL_DEFAULTS } from '../../../shared/constants/index';
 import type { Project, ProjectFile } from '../stores/project';
 import type { ListFilesResponse } from '../../../shared/types/index';
 
+/** An API failure that keeps its HTTP status, so the UI can tell a limit from a crash. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
+/** 429 is a daily or burst limit: an expected state, not something broken. */
+export const isLimitError = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 429;
+
+/** fetch rejects with a bare "Failed to fetch" when the API cannot be reached at all. */
+const callApi = async (url: string, init: RequestInit): Promise<Response> => {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  }
+};
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/v1';
@@ -39,7 +62,7 @@ export const sendChatMessage = async (
     },
   };
 
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/chat`, {
+  const response = await callApi(`${API_BASE_URL}/projects/${projectId}/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -51,7 +74,10 @@ export const sendChatMessage = async (
   if (!response.ok) {
     await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || errorData.details || 'Failed to send message');
+    throw new ApiError(
+      errorData.error || errorData.details || 'Failed to send message',
+      response.status
+    );
   }
 
   const data: SendMessageResponse = await response.json();
@@ -63,7 +89,7 @@ const authedFetch = async (path: string, init: RequestInit = {}) => {
   const token = session.data.session?.access_token;
   if (!token) throw new Error('Not authenticated');
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await callApi(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -75,7 +101,10 @@ const authedFetch = async (path: string, init: RequestInit = {}) => {
   if (!response.ok) {
     await assertSessionValid(response);
     const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || err.details || `Request failed (${response.status})`);
+    throw new ApiError(
+      err.error || err.details || `Request failed (${response.status})`,
+      response.status
+    );
   }
   return response.json();
 };
@@ -245,7 +274,7 @@ export const getProjectFiles = async (projectId: string, userId: string) => {
   const { data, error } = await supabase
     .from('project_files')
     .select(
-      'id, project_id, file_name, storage_path, file_id, created_at, user_id, status, is_summary_exist'
+      'id, project_id, file_name, storage_path, file_id, created_at, user_id, status, is_summary_exist, processing_error'
     )
     .eq('project_id', projectId)
     .eq('user_id', userId);
@@ -285,7 +314,7 @@ export const generateDocumentSummary = async (
 
   if (!token) throw new Error('Not authenticated');
 
-  const response = await fetch(`${API_BASE_URL}/documents/generateSummary`, {
+  const response = await callApi(`${API_BASE_URL}/documents/generateSummary`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -301,7 +330,7 @@ export const generateDocumentSummary = async (
   if (!response.ok) {
     await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to generate summary');
+    throw new ApiError(errorData.error || 'Failed to generate summary', response.status);
   }
 
   return await response.json();
@@ -389,7 +418,7 @@ export const searchFiles = async (
     projectIds: projectIds.length > 0 ? projectIds : undefined,
   };
 
-  const response = await fetch(`${API_BASE_URL}/searchFiles`, {
+  const response = await callApi(`${API_BASE_URL}/searchFiles`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -574,7 +603,7 @@ export const processDocument = async (
 
   if (!token) throw new Error('Not authenticated');
 
-  const response = await fetch(`${API_BASE_URL}/documents/process`, {
+  const response = await callApi(`${API_BASE_URL}/documents/process`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -590,7 +619,10 @@ export const processDocument = async (
   if (!response.ok) {
     await assertSessionValid(response);
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || errorData.details || 'Failed to process document');
+    throw new ApiError(
+      errorData.error || errorData.details || 'Failed to process document',
+      response.status
+    );
   }
 
   const data = await response.json();

@@ -10,6 +10,14 @@ import {
 import { openaiClient } from "../../lib/openaiClient.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
+import { currentUser } from "../../lib/auth.ts";
+import {
+  consumeQuota,
+  quotaExceeded,
+  QuotaUnavailableError,
+  quotaUnavailable,
+} from "../../lib/quotaService.ts";
+import { quotaMessage } from "../../lib/quota.ts";
 import {
   chunkPages,
   createChunkId,
@@ -40,6 +48,7 @@ interface DocParserResponse {
 
 export async function processDocument(c: Context) {
   try {
+    const user = currentUser(c);
     const body = await c.req.json();
     const { project_id, document_id }: DocumentProcessRequest = body;
 
@@ -50,29 +59,6 @@ export async function processDocument(c: Context) {
           error: "Missing required fields: project_id, document_id",
         } as DocumentProcessResponse,
         400,
-      );
-    }
-
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return c.json(
-        {
-          success: false,
-          error: "Missing or invalid Authorization header",
-        } as DocumentProcessResponse,
-        401,
-      );
-    }
-
-    let user: { id: string; email?: string };
-    try {
-      user = await supabaseService.getUserFromToken(
-        authHeader.slice("Bearer ".length),
-      );
-    } catch {
-      return c.json(
-        { success: false, error: "Unauthorized" } as DocumentProcessResponse,
-        401,
       );
     }
 
@@ -93,10 +79,30 @@ export async function processDocument(c: Context) {
       );
     }
 
-    await supabaseService.updateDocument(document_id, {
-      status: "processing",
-      processing_error: null,
-    });
+    if (!await supabaseService.claimForProcessing(document_id)) {
+      return c.json(
+        {
+          success: false,
+          error: "This document is already being processed.",
+        } as DocumentProcessResponse,
+        409,
+      );
+    }
+
+    // Charged here, before the pipeline starts, so a burst of requests cannot
+    // all pass a check and then all run. Claiming first means a double click
+    // gets the 409 above instead of spending a document.
+    let quota;
+    try {
+      quota = await consumeQuota(user.id, "documents");
+    } catch (error) {
+      await releaseClaim(document);
+      throw error;
+    }
+    if (!quota.allowed) {
+      await releaseClaim(document);
+      return quotaExceeded(c, "documents", quota.limit);
+    }
 
     // OCR plus embedding runs for minutes on a large file. Holding the request
     // open for that long does not survive any proxy, and the browser had no
@@ -116,6 +122,10 @@ export async function processDocument(c: Context) {
       202,
     );
   } catch (error) {
+    if (error instanceof QuotaUnavailableError) {
+      console.error(error.message);
+      return quotaUnavailable(c);
+    }
     console.error("Could not start processing:", error);
     return c.json(
       {
@@ -125,6 +135,14 @@ export async function processDocument(c: Context) {
       500,
     );
   }
+}
+
+/** Puts the row back the way it was when the start is refused after the claim. */
+async function releaseClaim(document: DocumentRecord): Promise<void> {
+  await supabaseService.updateDocument(document.id, {
+    status: document.status,
+    processing_error: document.processing_error ?? null,
+  }).catch((e) => console.error("Could not release claim:", e));
 }
 
 /**
@@ -212,6 +230,18 @@ async function runPipeline(
 
     if (parseResult.error) {
       throw new Error(`Parser error: ${parseResult.error}`);
+    }
+
+    // The page count is only known once the parser has run, so pages are
+    // charged here and not with the document. Deliberately never refunded: if a
+    // later step fails, the parsing and embedding were still done and paid
+    // for, and a refund path is a second place for the counter to drift.
+    const pageCount = parseResult.pages?.length ?? 0;
+    if (pageCount > 0) {
+      const pages = await consumeQuota(userId, "pages", pageCount);
+      if (!pages.allowed) {
+        throw new Error(quotaMessage("pages", pages.limit));
+      }
     }
 
     console.log(

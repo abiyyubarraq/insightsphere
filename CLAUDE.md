@@ -66,6 +66,8 @@ new code — import it.
 | Text layer floor | 20 runes and 10 letters per page, below which the page goes to OCR | `doc-parser/utils/text_layer.go` |
 | Storage bucket | `SUPABASE_STORAGE_BUCKET`, default `anotherbrainfileplayground` | `api/lib/config.ts` |
 | Storage path | `{userId}/{projectId}/{timestamp}_{filename}` | `frontend/src/services/supabase.ts` |
+| Daily quotas | per tier in the `quota_tiers` table, not in code; no `user_tiers` row = `basic` | `supabase/migrations/0006_quota.sql` |
+| Burst limit | 20 requests/minute per user on chat, query, process, summary | `api/main.ts` |
 
 The threshold is low on purpose and has been measured on this corpus. Raising it
 to 0.35 drops real queries: "What is psychological inoculation?" goes from 9
@@ -93,6 +95,12 @@ in: no admin mode, no shared secret, no test routes.
 | `POST` | `/v1/search/query` — raw chunks, no generation |
 | `POST` | `/v1/searchFiles` — file library, filename or semantic |
 | `GET` | `/health` |
+
+Chat, query, process and summary answer **429** at a daily quota or the burst
+limit, with a sentence meant for the user in `error`. Process answers **409**
+for a document already processing; summary answers **409** when one exists,
+unless the body has `regenerate: true`. A **503** means the quota or Supabase
+Auth could not be checked — never read it as signed out.
 
 ---
 
