@@ -1,0 +1,68 @@
+{
+  "base": "master",
+  "branch": "{id}/{slug}",
+  "checks": {
+    "fe-check": { "cmd": "npm run check", "cwd": "frontend" },
+    "fe-lint":  { "cmd": "npm run lint", "cwd": "frontend" },
+    "fe-test":  { "cmd": "npm test", "cwd": "frontend" },
+    "fe-build": { "cmd": "npm run build", "cwd": "frontend" },
+    "api": {
+      "cmd": "docker run --rm -v \"$(pwd -W)/api:/app\" -v \"$(pwd -W)/shared:/shared\" -w /app denoland/deno:2.5.2 sh -c \"deno check main.ts && deno lint && deno test --allow-net --allow-env --allow-read --allow-write\"",
+      "when": ["api/**", "shared/**"], "timeout": 900
+    },
+    "parser": { "cmd": "go vet ./... && go build ./... && go test ./...", "cwd": "doc-parser", "when": ["doc-parser/**"], "timeout": 900 }
+  },
+  "verify": ["none", "web"],
+  "serve": {
+    "cmd": "npm run start -- --port {port} --strictPort",
+    "cwd": "frontend",
+    "port": 5173,
+    "readyTimeout": 180,
+    "env": { "VITE_API_URL": "{url:api}/v1" },
+    "services": [
+      {
+        "name": "parser",
+        "cmd": "docker build -q -t ship-parser-{job} doc-parser && docker run --rm --name ship-parser-{job} -p {port:parser}:8080 -e PORT=8080 -e GIN_MODE=debug -e OCR_LANGUAGES=eng+ind -v ship-tmp-{job}:/tmp ship-parser-{job}",
+        "stop": "docker rm -f ship-parser-{job}",
+        "port": 18080,
+        "when": ["doc-parser/**", "api/**", "shared/**"],
+        "fallback": "http://localhost:8080",
+        "readyPath": "/health",
+        "readyTimeout": 900
+      },
+      {
+        "name": "api",
+        "cmd": "docker run --rm --name ship-api-{job} -p {port:api}:8000 --env-file dev/.env -e PORT=8000 -e QDRANT_URL=http://host.docker.internal:6333 -e DOC_PARSER_URL={dockerurl:parser} -e CORS_ORIGINS=http://localhost:5173 -v \"$(pwd -W)/api:/app\" -v \"$(pwd -W)/shared:/shared\" -v ship-tmp-{job}:/tmp -w /app denoland/deno:2.5.2 deno run --allow-net --allow-env --allow-read --allow-write main.ts",
+        "stop": "docker rm -f ship-api-{job}; docker volume rm -f ship-tmp-{job} >/dev/null 2>&1 || true",
+        "port": 18000,
+        "when": ["api/**", "shared/**", "doc-parser/**"],
+        "fallback": "http://localhost:8000",
+        "readyPath": "/health",
+        "readyTimeout": 300
+      }
+    ]
+  },
+  "worktree": {
+    "link": [{ "path": "frontend/node_modules", "lockfile": "frontend/package-lock.json", "install": "npm ci" }],
+    "copy": [".env", "dev/.env", "frontend/.env"]
+  },
+  "docs": [
+    { "path": "README.md", "role": "reference" },
+    { "path": "CLAUDE.md", "role": "rules" }
+  ],
+  "schema": { "sources": ["supabase/migrations/**", "shared/**"], "live": "supabase MCP in read-only mode, scoped to this project" },
+  "neverTouch": ["supabase/migrations/**"],
+  "rules": [
+    "Never recreate a Qdrant collection. Search with useProjectCollection: true.",
+    "No embedding fallback. Never log document text.",
+    "Svelte 5 runes and DaisyUI tokens only; no inline handlers (CSP).",
+    "Any change to auth, RLS policies or API access checks: run ./scripts/verify-security.sh with the dev stack up and put its result in the PR.",
+    "New migrations need the Spec to say so; they are applied by the user, never by an agent."
+  ],
+  "requires": [
+    { "name": "docker", "check": "docker info", "fix": "start Docker Desktop (needed for api/parser tickets and their checks)", "optional": true }
+  ],
+  "merge": "squash",
+  "maxRounds": 3,
+  "maxParallel": 3
+}
