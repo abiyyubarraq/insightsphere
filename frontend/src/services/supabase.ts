@@ -22,11 +22,15 @@ export class ApiError extends Error {
 export const isLimitError = (error: unknown): boolean =>
   error instanceof ApiError && error.status === 429;
 
-/** fetch rejects with a bare "Failed to fetch" when the API cannot be reached at all. */
+/**
+ * fetch rejects with a bare "Failed to fetch" when the API cannot be reached at all.
+ * A request the caller aborted keeps its own error, so a Stop is not shown as a network failure.
+ */
 const callApi = async (url: string, init: RequestInit): Promise<Response> => {
   try {
     return await fetch(url, init);
-  } catch {
+  } catch (error) {
+    if (init.signal?.aborted) throw error;
     throw new Error('Could not reach the server. Check your connection and try again.');
   }
 };
@@ -42,7 +46,8 @@ export const sendChatMessage = async (
   projectId: string,
   message: string,
   conversationId?: string,
-  options?: SendMessageRequest['options']
+  options?: SendMessageRequest['options'],
+  signal?: AbortSignal
 ): Promise<SendMessageResponse> => {
   const session = await supabase.auth.getSession();
   const token = session.data.session?.access_token;
@@ -69,6 +74,7 @@ export const sendChatMessage = async (
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(request),
+    signal,
   });
 
   if (!response.ok) {

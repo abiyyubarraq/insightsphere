@@ -4,10 +4,12 @@
     ChevronRight,
     Plus,
     X,
-    Send,
+    ArrowUp,
+    Square,
     Trash2,
     TriangleAlert,
   } from 'lucide-svelte';
+  import { onDestroy } from 'svelte';
   import { selectedProject, projects } from '../../../stores/project';
   import { user } from '../../../stores/auth';
   import {
@@ -19,6 +21,7 @@
   import type { ChatMessage } from '../../../../../shared/types/chat';
   import { ConfirmationDialog, NoticeBanner } from '../common';
   import ChatMarkdown from './ChatMarkdown.svelte';
+  import { canSend, shouldSubmitOnKey } from '$lib/chatComposer';
 
   let {
     leftSidebarOpen = $bindable(),
@@ -61,6 +64,34 @@
   let visibleCitations: Record<string, number> = $state({});
   let showClearConfirmDialog = $state(false);
   let clearLoading = $state(false);
+  let textareaEl: HTMLTextAreaElement | undefined = $state();
+  let hasMessages = $derived(chatMessages.length > 0);
+
+  // Not reactive: only the send, stop and cleanup code read it.
+  let pending: { controller: AbortController; assistantId: string } | null = null;
+
+  const MAX_INPUT_HEIGHT_PX = 200;
+
+  $effect(() => {
+    void userInput;
+    if (!textareaEl) return;
+    textareaEl.style.height = 'auto';
+    const contentHeight = textareaEl.scrollHeight;
+    textareaEl.style.height = `${Math.min(contentHeight, MAX_INPUT_HEIGHT_PX)}px`;
+    textareaEl.style.overflowY = contentHeight > MAX_INPUT_HEIGHT_PX ? 'auto' : 'hidden';
+  });
+
+  /**
+   * Stop only cancels the browser request. The API still finishes, saves the
+   * answer to history and counts it against the quota.
+   */
+  const cancelPendingAnswer = () => {
+    pending?.controller.abort();
+    pending = null;
+    chatLoading = false;
+  };
+
+  onDestroy(() => pending?.controller.abort());
 
   // Auto-scroll to bottom when new messages arrive
   $effect(() => {
@@ -78,9 +109,12 @@
   $effect(() => {
     if ($selectedProject?.id) {
       if (loadedProjectId !== $selectedProject.id) {
+        // An answer for the previous project must not land in this one.
+        cancelPendingAnswer();
         loadConversationHistory();
       }
     } else {
+      cancelPendingAnswer();
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
@@ -107,7 +141,7 @@
   };
 
   const handleSendMessage = async () => {
-    if (!userInput.trim() || !$selectedProject || !$user || chatLoading) return;
+    if (!canSend(userInput, chatLoading) || !$selectedProject || !$user) return;
 
     const message = userInput.trim();
     userInput = '';
@@ -133,9 +167,21 @@
     };
     chatMessages = [...chatMessages, tempAssistantMessage];
 
+    const controller = new AbortController();
+    pending = { controller, assistantId: tempAssistantMessage.id };
+    textareaEl?.focus();
+
     try {
       chatLoading = true;
-      const response = await sendChatMessage($selectedProject.id, message, conversationId);
+      const response = await sendChatMessage(
+        $selectedProject.id,
+        message,
+        conversationId,
+        undefined,
+        controller.signal
+      );
+      // The response can arrive in the same moment as Stop.
+      if (controller.signal.aborted) return;
 
       // Update conversation ID if it's a new conversation
       if (!conversationId) {
@@ -148,6 +194,7 @@
       );
       chatMessages = [...chatMessages, response.user_message, response.assistant_message];
     } catch (error) {
+      if (controller.signal.aborted) return;
       console.error('Failed to send message:', error);
       chatError = error instanceof Error ? error.message : 'Failed to send message';
       chatErrorTone = isLimitError(error) ? 'warning' : 'error';
@@ -155,8 +202,20 @@
       // Remove loading placeholder on error
       chatMessages = chatMessages.filter((m) => m.id !== tempAssistantMessage.id);
     } finally {
-      chatLoading = false;
+      // After a Stop, a newer request may own the loading state by now.
+      if (pending?.controller === controller) {
+        pending = null;
+        chatLoading = false;
+        textareaEl?.focus();
+      }
     }
+  };
+
+  const handleStop = () => {
+    const assistantId = pending?.assistantId;
+    cancelPendingAnswer();
+    chatMessages = chatMessages.filter((m) => m.id !== assistantId);
+    textareaEl?.focus();
   };
 
   const handleClearConversation = () => {
@@ -187,7 +246,7 @@
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (shouldSubmitOnKey(e)) {
       e.preventDefault();
       handleSendMessage();
     }
@@ -320,7 +379,7 @@
       </div>
     {:else}
       <!-- Chat Interface -->
-      <div class="flex flex-col min-h-0 ml-2">
+      <div class="flex flex-col flex-1 min-h-0 ml-2">
         <!-- Chat Error Display -->
         <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
         {#if chatError}
@@ -333,217 +392,236 @@
           </div>
         {/if}
 
-        <!-- Chat Messages Area -->
-        <div class="flex-1 p-6 overflow-y-auto min-h-0" bind:this={messagesContainer}>
-          {#if loadingHistory}
-            <div class="flex justify-center items-center h-full">
-              <span class="loading loading-spinner loading-lg text-primary"></span>
-            </div>
-          {:else if chatMessages.length === 0}
-            <div class="w-full h-full flex items-center justify-center">
-              <div class="text-center space-y-4">
-                <div class="text-4xl">💬</div>
-                <h3 class="text-2xl font-semibold">Start a conversation</h3>
-                <p class="text-base-content/70">
-                  Ask questions about your documents in {$selectedProject.name}
-                </p>
-              </div>
-            </div>
-          {:else}
-            <div class="space-y-6 max-w-4xl mx-auto">
-              {#each chatMessages as message (message.id)}
-                <div class="chat {message.role === 'user' ? 'chat-end' : 'chat-start'}">
-                  <div
-                    class="chat-bubble {message.role === 'user'
-                      ? 'chat-bubble-primary'
-                      : 'chat-bubble-secondary'}"
-                  >
-                    {#if message.content}
-                      {#if message.role === 'assistant'}
-                        <!-- Render markdown for assistant messages -->
-                        <ChatMarkdown
-                          content={message.content}
-                          messageId={message.id}
-                          oncitation={handleCitationClick}
-                        />
+        {#if loadingHistory}
+          <div class="flex flex-1 justify-center items-center">
+            <span class="loading loading-spinner loading-lg text-primary"></span>
+          </div>
+        {:else}
+          {#if hasMessages}
+            <!-- Chat Messages Area -->
+            <div class="flex-1 p-6 overflow-y-auto min-h-0" bind:this={messagesContainer}>
+              <div class="space-y-6 max-w-4xl mx-auto">
+                {#each chatMessages as message (message.id)}
+                  <div class="chat {message.role === 'user' ? 'chat-end' : 'chat-start'}">
+                    <div
+                      class="chat-bubble {message.role === 'user'
+                        ? 'chat-bubble-primary'
+                        : 'chat-bubble-secondary'}"
+                    >
+                      {#if message.content}
+                        {#if message.role === 'assistant'}
+                          <!-- Render markdown for assistant messages -->
+                          <ChatMarkdown
+                            content={message.content}
+                            messageId={message.id}
+                            oncitation={handleCitationClick}
+                          />
+                        {:else}
+                          <!-- Keep user messages as plain text -->
+                          <div class="whitespace-pre-wrap">{message.content}</div>
+                        {/if}
                       {:else}
-                        <!-- Keep user messages as plain text -->
-                        <div class="whitespace-pre-wrap">{message.content}</div>
+                        <span class="loading loading-dots loading-sm"></span>
                       {/if}
-                    {:else}
-                      <span class="loading loading-dots loading-sm"></span>
-                    {/if}
 
-                    <!-- The API decides what counts as weak, so the floor
+                      <!-- The API decides what counts as weak, so the floor
                          lives in one place and history keeps the flag. -->
-                    {#if message.role === 'assistant' && message.metadata?.low_confidence && message.citations?.length}
-                      <div class="mt-3 flex items-start gap-2 text-xs text-warning">
-                        <TriangleAlert class="w-4 h-4 shrink-0" />
-                        <span>
-                          Weak match. The documents may not cover this question, so check
-                          the sources before relying on this answer.
-                        </span>
-                      </div>
-                    {/if}
-
-                    <!-- Citations for assistant messages -->
-                    {#if message.role === 'assistant' && message.citations && message.citations.length > 0}
-                      <div class="mt-3 pt-3 border-t border-base-content/20">
-                        <div class="text-xs font-semibold mb-2 opacity-70">
-                          Sources ({message.citations.length}):
+                      {#if message.role === 'assistant' && message.metadata?.low_confidence && message.citations?.length}
+                        <div class="mt-3 flex items-start gap-2 text-xs text-warning">
+                          <TriangleAlert class="w-4 h-4 shrink-0" />
+                          <span>
+                            Weak match. The documents may not cover this question, so check the
+                            sources before relying on this answer.
+                          </span>
                         </div>
-                        <div class="space-y-2">
-                          {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
-                            <div
-                              id="citation-{message.id}-{index}"
-                              class="flex items-start gap-2 text-xs opacity-80 transition-all duration-300"
-                            >
-                              <div class="flex-1">
-                                <div class="font-medium">
-                                  <span
-                                    class="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-primary text-primary-content rounded-full mr-1"
-                                  >
-                                    {index + 1}
-                                  </span>
-                                  <button
-                                    class="text-left hover:text-primary hover:underline transition-colors cursor-pointer"
-                                    onclick={() => handleFilenameClick(citation.file_name)}
-                                    title="Click to find this file in the documents sidebar"
-                                  >
-                                    {citation.file_name}
-                                  </button>
-                                </div>
-                                {#if citation.page_number}
-                                  <div class="opacity-70">Page {citation.page_number}</div>
-                                {/if}
-                                <div class="opacity-60 mt-1 line-clamp-2">
-                                  {citation.text_snippet}
-                                </div>
-                                <div class="opacity-50 mt-1">
-                                  Relevance: {(citation.similarity_score * 100).toFixed(0)}%
+                      {/if}
+
+                      <!-- Citations for assistant messages -->
+                      {#if message.role === 'assistant' && message.citations && message.citations.length > 0}
+                        <div class="mt-3 pt-3 border-t border-base-content/20">
+                          <div class="text-xs font-semibold mb-2 opacity-70">
+                            Sources ({message.citations.length}):
+                          </div>
+                          <div class="space-y-2">
+                            {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
+                              <div
+                                id="citation-{message.id}-{index}"
+                                class="flex items-start gap-2 text-xs opacity-80 transition-all duration-300"
+                              >
+                                <div class="flex-1">
+                                  <div class="font-medium">
+                                    <span
+                                      class="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-primary text-primary-content rounded-full mr-1"
+                                    >
+                                      {index + 1}
+                                    </span>
+                                    <button
+                                      class="text-left hover:text-primary hover:underline transition-colors cursor-pointer"
+                                      onclick={() => handleFilenameClick(citation.file_name)}
+                                      title="Click to find this file in the documents sidebar"
+                                    >
+                                      {citation.file_name}
+                                    </button>
+                                  </div>
+                                  {#if citation.page_number}
+                                    <div class="opacity-70">Page {citation.page_number}</div>
+                                  {/if}
+                                  <div class="opacity-60 mt-1 line-clamp-2">
+                                    {citation.text_snippet}
+                                  </div>
+                                  <div class="opacity-50 mt-1">
+                                    Relevance: {(citation.similarity_score * 100).toFixed(0)}%
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          {/each}
-                          {#if getVisibleCitationsCount(message.id, message.citations.length) < message.citations.length}
-                            <button
-                              class="btn btn-ghost btn-xs gap-1 text-white hover:text-primary-focus"
-                              onclick={() => showMoreCitations(message.id)}
-                            >
-                              <span
-                                >Show {Math.min(
-                                  3,
-                                  message.citations.length -
-                                    getVisibleCitationsCount(message.id, message.citations.length)
-                                )} more</span
+                            {/each}
+                            {#if getVisibleCitationsCount(message.id, message.citations.length) < message.citations.length}
+                              <button
+                                class="btn btn-ghost btn-xs gap-1 text-white hover:text-primary-focus"
+                                onclick={() => showMoreCitations(message.id)}
                               >
-                              <svg
-                                class="w-3 h-3"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
+                                <span
+                                  >Show {Math.min(
+                                    3,
+                                    message.citations.length -
+                                      getVisibleCitationsCount(message.id, message.citations.length)
+                                  )} more</span
+                                >
+                                <svg
+                                  class="w-3 h-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M19 9l-7 7-7-7"
+                                  ></path>
+                                </svg>
+                              </button>
+                            {:else if getVisibleCitationsCount(message.id, message.citations.length) > 3}
+                              <button
+                                class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
+                                onclick={() => showLessCitations(message.id)}
                               >
-                                <path
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                  stroke-width="2"
-                                  d="M19 9l-7 7-7-7"
-                                ></path>
-                              </svg>
-                            </button>
-                          {:else if getVisibleCitationsCount(message.id, message.citations.length) > 3}
-                            <button
-                              class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
-                              onclick={() => showLessCitations(message.id)}
-                            >
-                              <span>Show less</span>
-                              <svg
-                                class="w-3 h-3"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  stroke-linecap="round"
-                                  stroke-linejoin="round"
-                                  stroke-width="2"
-                                  d="M5 15l7-7 7 7"
-                                ></path>
-                              </svg>
-                            </button>
+                                <span>Show less</span>
+                                <svg
+                                  class="w-3 h-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M5 15l7-7 7 7"
+                                  ></path>
+                                </svg>
+                              </button>
+                            {/if}
+                          </div>
+                        </div>
+                      {/if}
+
+                      <!-- Metadata for assistant messages -->
+                      {#if message.role === 'assistant' && message.metadata}
+                        <div class="mt-2 text-xs opacity-50">
+                          {#if message.metadata.processing_time_ms}
+                            {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
+                          {/if}
+                          {#if message.metadata.llm_model}
+                            • {message.metadata.llm_model}
                           {/if}
                         </div>
-                      </div>
-                    {/if}
-
-                    <!-- Metadata for assistant messages -->
-                    {#if message.role === 'assistant' && message.metadata}
-                      <div class="mt-2 text-xs opacity-50">
-                        {#if message.metadata.processing_time_ms}
-                          {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
-                        {/if}
-                        {#if message.metadata.llm_model}
-                          • {message.metadata.llm_model}
-                        {/if}
-                      </div>
-                    {/if}
+                      {/if}
+                    </div>
+                    <div class="chat-footer opacity-50 text-xs mt-1">
+                      {new Date(message.created_at).toLocaleTimeString()}
+                    </div>
                   </div>
-                  <div class="chat-footer opacity-50 text-xs mt-1">
-                    {new Date(message.created_at).toLocaleTimeString()}
-                  </div>
-                </div>
-              {/each}
+                {/each}
+              </div>
             </div>
           {/if}
-        </div>
 
-        <!-- Chat Input Area -->
-        <div class="p-3 border-t border-base-300">
-          <div class="w-full max-w-4xl mx-auto">
-            <div class="flex gap-4">
-              <div class="flex-1 relative">
+          <!-- One composer for both layouts, so the draft and focus survive the move. -->
+          <div class="px-6 pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
+            <div class="w-full max-w-4xl mx-auto">
+              {#if !hasMessages}
+                <div class="mb-6 px-1">
+                  <h2 class="text-2xl font-medium text-balance">What do you want to know?</h2>
+                  <p class="mt-2 text-sm text-base-content/60">
+                    Answers come from the documents in
+                    <span class="text-base-content/80">{$selectedProject.name}</span>.
+                  </p>
+                </div>
+              {/if}
+
+              <div
+                class="rounded-2xl border border-base-content/15 bg-base-200 px-3 pt-3 pb-2 transition-colors focus-within:border-base-content/40"
+              >
+                <label for="chat-input" class="sr-only">Message</label>
                 <textarea
+                  id="chat-input"
+                  bind:this={textareaEl}
                   bind:value={userInput}
                   onkeydown={handleKeyDown}
-                  placeholder="Ask anything about your documents..."
-                  class="textarea textarea-bordered w-full resize-none"
-                  rows="2"
-                  disabled={chatLoading}
+                  placeholder="Ask about your documents…"
+                  rows="1"
+                  class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/40"
                 ></textarea>
-                <div class="absolute right-2 bottom-2 flex gap-2">
-                  <button
-                    class="btn btn-primary btn-sm gap-2"
-                    onclick={handleSendMessage}
-                    disabled={chatLoading || !userInput.trim()}
-                  >
-                    {#if chatLoading}
-                      <span class="loading loading-spinner loading-xs"></span>
-                    {:else}
-                      <Send class="w-4 h-4" />
-                    {/if}
-                  </button>
-                </div>
-              </div>
-              <div class="flex flex-col gap-2">
-                <div class="border-b border-base-300">
-                  {#if chatMessages.length > 0}
+                <div class="mt-2 flex justify-end">
+                  {#if chatLoading}
                     <button
-                      class="btn btn-secondary btn-sm gap-2"
-                      onclick={handleClearConversation}
-                      title="Clear conversation"
+                      type="button"
+                      class="btn btn-circle btn-sm btn-neutral"
+                      onclick={handleStop}
+                      aria-label="Stop"
+                      title="Stop waiting for the answer"
                     >
-                      <Trash2 class="w-4 h-4" />
-                      Clear
+                      <Square class="w-4 h-4" fill="currentColor" />
+                    </button>
+                  {:else}
+                    <button
+                      type="button"
+                      class="btn btn-circle btn-sm btn-primary"
+                      onclick={handleSendMessage}
+                      disabled={!canSend(userInput, false)}
+                      aria-label="Send message"
+                    >
+                      <ArrowUp class="w-4 h-4" />
                     </button>
                   {/if}
                 </div>
               </div>
-            </div>
-            <div class="text-xs text-base-content/50 mt-2">
-              Press Enter to send, Shift+Enter for new line
+
+              <div class="mt-2 flex min-h-6 items-center justify-between gap-2 px-1">
+                <span class="text-xs text-base-content/50">
+                  Enter to send, Shift+Enter for a new line
+                </span>
+                {#if hasMessages}
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs gap-1 text-base-content/60"
+                    onclick={handleClearConversation}
+                    title="Clear conversation"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                    Clear
+                  </button>
+                {/if}
+              </div>
+
+              {#if !hasMessages}
+                <!-- Room under the composer for suggested questions. -->
+                <div class="min-h-16"></div>
+              {/if}
             </div>
           </div>
-        </div>
+        {/if}
       </div>
     {/if}
   </div>
