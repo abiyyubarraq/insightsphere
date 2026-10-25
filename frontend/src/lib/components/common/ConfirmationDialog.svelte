@@ -37,12 +37,25 @@
   let confirmButton: HTMLButtonElement | undefined = $state();
 
   // Focus starts on Cancel, the safe choice, and goes back to whatever opened
-  // the dialog when it closes.
+  // the dialog when it closes. DaisyUI fades the modal in, and focus() does
+  // nothing while it is still visibility:hidden, so retry until it sticks.
   $effect(() => {
-    if (!isOpen || !cancelButton) return;
+    const target = cancelButton;
+    if (!isOpen || !target) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    cancelButton.focus();
-    return () => opener?.focus();
+    const deadline = performance.now() + 1000;
+    let frame = 0;
+    const tryFocus = () => {
+      target.focus();
+      if (document.activeElement !== target && performance.now() < deadline) {
+        frame = requestAnimationFrame(tryFocus);
+      }
+    };
+    tryFocus();
+    return () => {
+      cancelAnimationFrame(frame);
+      opener?.focus();
+    };
   });
 
   const handleKeydown = (event: KeyboardEvent) => {
