@@ -2,15 +2,17 @@
 export const MIN_PASSWORD_LENGTH = 6;
 
 export type AuthErrorKind =
-  | 'rate_limited'
   | 'invalid_email'
+  | 'invalid_credentials'
+  | 'email_not_confirmed'
   | 'same_password'
   | 'weak_password'
   | 'unknown';
 
 export const AUTH_ERROR_MESSAGES: Record<AuthErrorKind, string> = {
-  rate_limited: 'Too many reset emails. Wait a few minutes and try again.',
   invalid_email: 'Enter a valid email address.',
+  invalid_credentials: 'Email or password is wrong.',
+  email_not_confirmed: 'Confirm your email first, then sign in. Check your inbox for the link.',
   same_password: 'Choose a password different from your current one.',
   weak_password: 'That password is too weak. Try a longer one.',
   unknown: 'Something went wrong. Please try again.',
@@ -41,14 +43,25 @@ export const validateNewPassword = (password: string, confirm: string): string |
 
 /** Returns null when the request should be shown as sent. */
 export const classifyRecoverError = (error: AuthErrorLike): AuthErrorKind | null => {
-  // Supabase only checks the address when it really sends mail, so these two
-  // codes come back for existing accounts and never for unknown emails (those
-  // get 200). Showing either would tell anyone which emails have an account.
-  // The address shape is already checked in the browser before the request.
-  if (error.code === 'email_address_not_authorized' || error.code === 'email_address_invalid') {
+  // Supabase only checks the address and the send limit when it really sends
+  // mail, so these signals (the two codes and a 429) come back for existing
+  // accounts and never for unknown emails (those get 200). Showing any of them
+  // would tell anyone which emails have an account. The address shape is
+  // already checked in the browser before the request.
+  if (
+    error.status === 429 ||
+    error.code === 'over_email_send_rate_limit' ||
+    error.code === 'email_address_not_authorized' ||
+    error.code === 'email_address_invalid'
+  ) {
     return null;
   }
-  if (error.status === 429 || error.code === 'over_email_send_rate_limit') return 'rate_limited';
+  return 'unknown';
+};
+
+export const classifySignInError = (error: AuthErrorLike): AuthErrorKind => {
+  if (error.code === 'invalid_credentials') return 'invalid_credentials';
+  if (error.code === 'email_not_confirmed') return 'email_not_confirmed';
   return 'unknown';
 };
 

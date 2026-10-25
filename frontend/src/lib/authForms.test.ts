@@ -3,6 +3,7 @@ import {
   AUTH_ERROR_MESSAGES,
   MIN_PASSWORD_LENGTH,
   classifyRecoverError,
+  classifySignInError,
   classifyUpdatePasswordError,
   isValidEmail,
   validateNewPassword,
@@ -67,16 +68,15 @@ describe('turning a reset-request error into what the user sees', () => {
     expect(classifyRecoverError({ status: 400, code: 'email_address_not_authorized' })).toBeNull();
   });
 
-  // The raw rate-limit message is technical; the user needs to know to wait.
-  it('reports the email send rate limit as rate limited', () => {
-    expect(classifyRecoverError({ status: 429, code: 'over_email_send_rate_limit' })).toBe(
-      'rate_limited'
-    );
+  // A real 429 only comes back for existing accounts. Showing it would tell
+  // anyone which emails have an account.
+  it('treats the email send rate limit as success', () => {
+    expect(classifyRecoverError({ status: 429, code: 'over_email_send_rate_limit' })).toBeNull();
   });
 
-  // Some rate limits come with a 429 and no code.
-  it('reports any 429 as rate limited', () => {
-    expect(classifyRecoverError({ status: 429 })).toBe('rate_limited');
+  // Some rate limits come with a 429 and no code; same leak.
+  it('treats any 429 as success', () => {
+    expect(classifyRecoverError({ status: 429 })).toBeNull();
   });
 
   // Supabase validates the address only when it sends mail, so this code
@@ -89,6 +89,33 @@ describe('turning a reset-request error into what the user sees', () => {
   it('reports any other error as unknown', () => {
     expect(classifyRecoverError({ status: 500, code: 'unexpected_failure' })).toBe('unknown');
     expect(classifyRecoverError({})).toBe('unknown');
+  });
+
+  // The success rules must not swallow real server failures.
+  it('still reports a 500 with no code as unknown', () => {
+    expect(classifyRecoverError({ status: 500 })).toBe('unknown');
+  });
+});
+
+describe('turning a sign-in error into what the user sees', () => {
+  // Raw Supabase wording ("Invalid login credentials") must not reach the screen.
+  it('reports a wrong email or password', () => {
+    expect(classifySignInError({ status: 400, code: 'invalid_credentials' })).toBe(
+      'invalid_credentials'
+    );
+  });
+
+  // Raw Supabase wording must not reach the screen; the user needs to know to confirm.
+  it('reports an unconfirmed email', () => {
+    expect(classifySignInError({ status: 400, code: 'email_not_confirmed' })).toBe(
+      'email_not_confirmed'
+    );
+  });
+
+  // Any other error gets the generic sentence, never the raw Supabase message.
+  it('reports any other sign-in error as unknown', () => {
+    expect(classifySignInError({ status: 500, code: 'unexpected_failure' })).toBe('unknown');
+    expect(classifySignInError({})).toBe('unknown');
   });
 });
 
@@ -113,8 +140,9 @@ describe('turning a password-update error into what the user sees', () => {
   // The generic sentence must never carry Supabase's own wording.
   it('has a plain sentence for every kind', () => {
     expect(AUTH_ERROR_MESSAGES.unknown).toBe('Something went wrong. Please try again.');
-    expect(AUTH_ERROR_MESSAGES.rate_limited).toBe(
-      'Too many reset emails. Wait a few minutes and try again.'
+    expect(AUTH_ERROR_MESSAGES.invalid_credentials).toBe('Email or password is wrong.');
+    expect(AUTH_ERROR_MESSAGES.email_not_confirmed).toBe(
+      'Confirm your email first, then sign in. Check your inbox for the link.'
     );
   });
 });

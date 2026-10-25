@@ -7,6 +7,7 @@
   import { isAuthenticated } from '../../stores/auth';
 
   const SENT_MESSAGE = 'If an account exists for that email, we sent a reset link.';
+  const SENT_HINT = 'No email after a few minutes? Wait a bit and try again.';
 
   $effect(() => {
     if ($isAuthenticated) {
@@ -54,9 +55,14 @@
 <AuthShell>
   <div class="space-y-2">
     <h1 class="text-2xl font-semibold">Reset your password</h1>
-    <p aria-live="polite" class={['text-base', !sent && 'text-base-content/70']}>
-      {sent ? SENT_MESSAGE : 'We will email you a link to choose a new one.'}
-    </p>
+    <div aria-live="polite" class="space-y-2">
+      <p class={['text-base', !sent && 'text-base-content/70']}>
+        {sent ? SENT_MESSAGE : 'We will email you a link to choose a new one.'}
+      </p>
+      {#if sent}
+        <p class="text-sm text-base-content/70">{SENT_HINT}</p>
+      {/if}
+    </div>
   </div>
 
   {#if !sent}
