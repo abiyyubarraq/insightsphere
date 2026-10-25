@@ -352,16 +352,6 @@
       </button>
     {/if}
 
-    {#if $selectedProject && !rightSidebarOpen}
-      <button
-        class="absolute right-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
-        onclick={onToggleRightSidebar}
-        title="Open Right Sidebar"
-      >
-        <ChevronLeft class="w-5 h-5 text-base-content/70" />
-      </button>
-    {/if}
-
     {#if !$selectedProject}
       <!-- Empty State - No Project Selected -->
       <div class="flex items-center justify-center mt-33">
@@ -383,21 +373,9 @@
     {:else}
       <!-- Chat Interface -->
       <div class="flex flex-col flex-1 min-h-0 ml-2">
-        <!-- Chat Error Display -->
-        <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
-        {#if chatError}
-          <div class="mt-4 px-14">
-            <NoticeBanner
-              message={chatError}
-              tone={chatErrorTone}
-              ondismiss={() => (chatError = '')}
-            />
-          </div>
-        {/if}
-
-        {#if hasMessages && !loadingHistory}
-          <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
-          <div class="flex h-12 shrink-0 items-center justify-end px-14">
+        <!-- One header row for both buttons. pl-14 keeps it clear of the left sidebar toggle. -->
+        <div class="flex h-12 shrink-0 items-center justify-end gap-1 pl-14 pr-3">
+          {#if hasMessages && !loadingHistory}
             <!-- The tooltip sits on a wrapper so it still shows while the button is disabled. -->
             <div class="tooltip tooltip-left" data-tip="New chat">
               <button
@@ -410,6 +388,29 @@
                 <SquarePen class="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
+          {/if}
+          {#if !rightSidebarOpen}
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-square text-base-content/60 hover:text-base-content"
+              onclick={onToggleRightSidebar}
+              aria-label="Open right sidebar"
+              title="Open right sidebar"
+            >
+              <ChevronLeft class="w-4 h-4" aria-hidden="true" />
+            </button>
+          {/if}
+        </div>
+
+        <!-- Chat Error Display -->
+        <!-- px-14 keeps it clear of the left sidebar toggle. -->
+        {#if chatError}
+          <div class="mt-4 px-14">
+            <NoticeBanner
+              message={chatError}
+              tone={chatErrorTone}
+              ondismiss={() => (chatError = '')}
+            />
           </div>
         {/if}
 
