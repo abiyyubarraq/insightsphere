@@ -491,7 +491,7 @@
                             {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
                               <div
                                 id="citation-{message.id}-{index}"
-                                class="flex items-start gap-2 text-xs opacity-80 transition-all duration-300"
+                                class="flex items-start gap-2 text-xs transition-all duration-300"
                               >
                                 <div class="flex-1">
                                   <div class="font-medium">
@@ -509,12 +509,12 @@
                                     </button>
                                   </div>
                                   {#if citation.page_number}
-                                    <div class="opacity-70">Page {citation.page_number}</div>
+                                    <div class="text-base-content/70">Page {citation.page_number}</div>
                                   {/if}
-                                  <div class="opacity-60 mt-1 line-clamp-2">
+                                  <div class="text-base-content/60 mt-1 line-clamp-2">
                                     {citation.text_snippet}
                                   </div>
-                                  <div class="opacity-50 mt-1">
+                                  <div class="text-base-content/60 mt-1">
                                     Relevance: {(citation.similarity_score * 100).toFixed(0)}%
                                   </div>
                                 </div>
