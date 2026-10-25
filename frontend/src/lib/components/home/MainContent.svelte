@@ -9,7 +9,7 @@
     Trash2,
     TriangleAlert,
   } from 'lucide-svelte';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { selectedProject, projects } from '../../../stores/project';
   import { user } from '../../../stores/auth';
   import {
@@ -86,9 +86,12 @@
    * answer to history and counts it against the quota.
    */
   const cancelPendingAnswer = () => {
+    const assistantId = pending?.assistantId;
     pending?.controller.abort();
     pending = null;
     chatLoading = false;
+    // untrack: the project effect calls this and must not depend on chatMessages.
+    chatMessages = untrack(() => chatMessages).filter((m) => m.id !== assistantId);
   };
 
   onDestroy(() => pending?.controller.abort());
@@ -212,9 +215,7 @@
   };
 
   const handleStop = () => {
-    const assistantId = pending?.assistantId;
     cancelPendingAnswer();
-    chatMessages = chatMessages.filter((m) => m.id !== assistantId);
     textareaEl?.focus();
   };
 
@@ -561,7 +562,7 @@
               {/if}
 
               <div
-                class="rounded-2xl border border-base-content/15 bg-base-200 px-3 pt-3 pb-2 transition-colors focus-within:border-base-content/40"
+                class="rounded-2xl border border-base-content/15 bg-base-200 px-3 pt-3 pb-2 transition-colors focus-within:border-base-content/40 focus-within:ring-2 focus-within:ring-primary/40"
               >
                 <label for="chat-input" class="sr-only">Message</label>
                 <textarea
