@@ -6,7 +6,7 @@
     X,
     ArrowUp,
     Square,
-    Trash2,
+    SquarePen,
     TriangleAlert,
   } from 'lucide-svelte';
   import { onDestroy, untrack } from 'svelte';
@@ -220,7 +220,8 @@
   };
 
   const handleClearConversation = () => {
-    if (!$selectedProject || !conversationId) return;
+    // A pending answer would land in the emptied chat.
+    if (chatLoading || !$selectedProject || !conversationId) return;
     showClearConfirmDialog = true;
   };
 
@@ -233,12 +234,13 @@
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
-      showClearConfirmDialog = false;
     } catch (error) {
       console.error('Failed to clear conversation:', error);
       chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
     } finally {
       clearLoading = false;
+      // Closing on failure too, so the error banner is not hidden behind the backdrop.
+      showClearConfirmDialog = false;
     }
   };
 
@@ -390,6 +392,24 @@
               tone={chatErrorTone}
               ondismiss={() => (chatError = '')}
             />
+          </div>
+        {/if}
+
+        {#if hasMessages && !loadingHistory}
+          <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
+          <div class="flex h-12 shrink-0 items-center justify-end px-14">
+            <!-- The tooltip sits on a wrapper so it still shows while the button is disabled. -->
+            <div class="tooltip tooltip-left" data-tip="New chat">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm btn-square text-base-content/60 hover:text-base-content"
+                onclick={handleClearConversation}
+                disabled={chatLoading}
+                aria-label="New chat"
+              >
+                <SquarePen class="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         {/if}
 
@@ -599,21 +619,10 @@
                 </div>
               </div>
 
-              <div class="mt-2 flex min-h-6 items-center justify-between gap-2 px-1">
+              <div class="mt-2 flex min-h-6 items-center px-1">
                 <span class="text-xs text-base-content/50">
                   Enter to send, Shift+Enter for a new line
                 </span>
-                {#if hasMessages}
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs gap-1 text-base-content/60"
-                    onclick={handleClearConversation}
-                    title="Clear conversation"
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                    Clear
-                  </button>
-                {/if}
               </div>
 
               {#if !hasMessages}
@@ -628,12 +637,11 @@
   </div>
 </div>
 
-<!-- Clear Conversation Confirmation Dialog -->
 <ConfirmationDialog
   bind:isOpen={showClearConfirmDialog}
-  title="Clear Conversation"
-  message="Are you sure you want to clear this conversation? This action cannot be undone."
-  confirmText="Clear"
+  title="Start a new chat?"
+  message="This deletes the current conversation. This cannot be undone."
+  confirmText="Start new chat"
   cancelText="Cancel"
   confirmClass="btn-error"
   icon="danger"
