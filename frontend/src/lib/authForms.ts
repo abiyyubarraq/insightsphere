@@ -41,12 +41,14 @@ export const validateNewPassword = (password: string, confirm: string): string |
 
 /** Returns null when the request should be shown as sent. */
 export const classifyRecoverError = (error: AuthErrorLike): AuthErrorKind | null => {
-  // Hosted Supabase's built-in mailer refuses existing accounts outside the
-  // Supabase organization with this code, but answers 200 for unknown emails.
-  // Showing it would tell anyone which emails have an account.
-  if (error.code === 'email_address_not_authorized') return null;
+  // Supabase only checks the address when it really sends mail, so these two
+  // codes come back for existing accounts and never for unknown emails (those
+  // get 200). Showing either would tell anyone which emails have an account.
+  // The address shape is already checked in the browser before the request.
+  if (error.code === 'email_address_not_authorized' || error.code === 'email_address_invalid') {
+    return null;
+  }
   if (error.status === 429 || error.code === 'over_email_send_rate_limit') return 'rate_limited';
-  if (error.code === 'email_address_invalid') return 'invalid_email';
   return 'unknown';
 };
 

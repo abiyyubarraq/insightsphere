@@ -79,10 +79,10 @@ describe('turning a reset-request error into what the user sees', () => {
     expect(classifyRecoverError({ status: 429 })).toBe('rate_limited');
   });
 
-  it('reports an address Supabase refuses as an invalid email', () => {
-    expect(classifyRecoverError({ status: 400, code: 'email_address_invalid' })).toBe(
-      'invalid_email'
-    );
+  // Supabase validates the address only when it sends mail, so this code
+  // appears for existing accounts only. An inline error would reveal them.
+  it('treats email_address_invalid as success', () => {
+    expect(classifyRecoverError({ status: 400, code: 'email_address_invalid' })).toBeNull();
   });
 
   // Anything else gets a generic sentence, never the raw Supabase message.
