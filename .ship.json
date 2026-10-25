@@ -19,7 +19,7 @@
       "cwd": "frontend"
     },
     "api": {
-      "cmd": "docker run --rm -v \"$(pwd -W 2>/dev/null || pwd)/api:/app\" -v \"$(pwd -W 2>/dev/null || pwd)/shared:/shared\" -w /app denoland/deno:2.5.2 sh -c \"deno check main.ts && deno lint && deno test --allow-net --allow-env --allow-read --allow-write\"",
+      "cmd": "docker run --rm -v \"$(pwd -W 2>/dev/null || pwd)/api:/app\" -v \"$(pwd -W 2>/dev/null || pwd)/shared:/shared\" -w /app denoland/deno:2.9.8 sh -c \"deno check main.ts && deno lint && deno test --allow-net --allow-env --allow-read --allow-write\"",
       "when": [
         "api/**",
         "shared/**"
@@ -64,7 +64,7 @@
       },
       {
         "name": "api",
-        "cmd": "docker run --rm --name ship-api-{job} -p {port:api}:8000 --env-file dev/.env -e PORT=8000 -e QDRANT_URL=http://host.docker.internal:6333 -e DOC_PARSER_URL={dockerurl:parser} -e CORS_ORIGINS=http://localhost:5173 -v \"$(pwd -W 2>/dev/null || pwd)/api:/app\" -v \"$(pwd -W 2>/dev/null || pwd)/shared:/shared\" -v ship-tmp-{job}:/tmp -w /app denoland/deno:2.5.2 deno run --allow-net --allow-env --allow-read --allow-write main.ts",
+        "cmd": "docker run --rm --name ship-api-{job} -p {port:api}:8000 --env-file dev/.env -e PORT=8000 -e QDRANT_URL=http://host.docker.internal:6333 -e DOC_PARSER_URL={dockerurl:parser} -e CORS_ORIGINS=http://localhost:5173 -v \"$(pwd -W 2>/dev/null || pwd)/api:/app\" -v \"$(pwd -W 2>/dev/null || pwd)/shared:/shared\" -v ship-tmp-{job}:/tmp -w /app denoland/deno:2.9.8 deno run --allow-net --allow-env --allow-read --allow-write main.ts",
         "stop": "docker rm -f ship-api-{job}; docker volume rm -f ship-tmp-{job} >/dev/null 2>&1 || true",
         "port": 18000,
         "when": [

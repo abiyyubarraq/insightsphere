@@ -1,13 +1,7 @@
 # Build context is the repo root: the frontend imports types from shared/.
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
-
-# The lock file is written by npm 11, which records nested dependency entries
-# in a way npm 10 resolves differently -- `npm ci` then fails with a spurious
-# "Missing: picomatch from lock file". Pin the major to match whoever generated
-# the lock.
-RUN npm install -g npm@11.14.1
 
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -28,14 +22,13 @@ ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
 
 RUN npm run build
 
-FROM node:22-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 ENV NODE_ENV=production
 
 # adapter-node emits a self-contained server; only production deps are needed
 # to run it.
-RUN npm install -g npm@11.14.1
 
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
