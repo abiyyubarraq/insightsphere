@@ -234,7 +234,7 @@ Deno.test("PUT saves the key encrypted and answers with the GET shape", async ()
   assertEquals(row.key_hint, "6789");
   assertEquals(atob(row.iv).length, 12);
   assertNotEquals(row.ciphertext, KEY);
-  assertEquals(await decryptKey(s, row), KEY);
+  assertEquals(await decryptKey(s, row, USER), KEY);
   assertEquals(await res?.json(), {
     hasKey: true,
     hint: "sk-…6789",

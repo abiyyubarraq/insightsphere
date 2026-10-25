@@ -26,15 +26,15 @@ export interface UserApiKeyStore {
 }
 
 /**
- * Null when the row cannot be decrypted (the server secret changed, or the row
- * was edited). The user has to save the key again; that is not a crash.
+ * Null when the row cannot be decrypted (the server secret changed, the row
+ * was edited, or it was copied from another user). The user has to save the key again; that is not a crash.
  */
 export async function keyFromRow(
   row: UserApiKeyRow,
   secret: CryptoKey,
 ): Promise<string | null> {
   try {
-    return await decryptKey(secret, row);
+    return await decryptKey(secret, row, row.user_id);
   } catch {
     console.error("Own API key unreadable:", {
       userId: row.user_id,

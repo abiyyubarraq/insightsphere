@@ -70,7 +70,7 @@ new code — import it.
 | Burst limit | 20 requests/minute per user on chat, query, process, summary, saving an own key | `api/main.ts` |
 | Own key shape | starts `sk-`, 20 to 300 chars, only `[A-Za-z0-9_-]` | `api/lib/openaiKeyCheck.ts` |
 | Own key check call | one embedding, 10 s timeout, no retries | `api/routes/settings/apiKey.ts` |
-| Own key encryption | AES-256-GCM, new 12-byte IV per save, secret `KEY_ENCRYPTION_SECRET` | `api/lib/keyCrypto.ts` |
+| Own key encryption | AES-256-GCM, new 12-byte IV per save, user id bound in as GCM additional data, secret `KEY_ENCRYPTION_SECRET` | `api/lib/keyCrypto.ts` |
 
 The threshold is low on purpose and has been measured on this corpus. Raising it
 to 0.35 drops real queries: "What is psychological inoculation?" goes from 9

@@ -106,7 +106,7 @@ export function createApiKeyRoutes(deps: ApiKeyDeps) {
       return c.json({ success: false, error: failure.message }, failure.status);
     }
 
-    const { ciphertext, iv } = await encryptKey(deps.secret, apiKey);
+    const { ciphertext, iv } = await encryptKey(deps.secret, apiKey, user);
     const row = await deps.store.saveKeyRow({
       user_id: user,
       provider: "openai",

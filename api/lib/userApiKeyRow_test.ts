@@ -15,7 +15,7 @@ async function savedRow(s: CryptoKey): Promise<UserApiKeyRow> {
   return {
     user_id: "user-1",
     provider: "openai",
-    ...await encryptKey(s, KEY),
+    ...await encryptKey(s, KEY, "user-1"),
     key_hint: "6789",
     created_at: "2026-10-01T00:00:00.000Z",
     updated_at: "2026-10-01T00:00:00.000Z",
@@ -54,6 +54,18 @@ Deno.test("a row from another secret gives null and logs no key material", async
   assertFalse(logged.includes(KEY));
   assertFalse(logged.includes(row.ciphertext));
   assertFalse(logged.includes(row.iv));
+});
+
+// Without the user id bound into the ciphertext, copying one user's row values
+// into another user's row would hand that user the first user's key.
+Deno.test("a row moved to another user gives null", async () => {
+  const s = await secret();
+  const row = { ...await savedRow(s), user_id: "user-2" };
+  let result: string | null = "unset";
+  await captureErrors(async () => {
+    result = await keyFromRow(row, s);
+  });
+  assertEquals(result, null);
 });
 
 Deno.test("a corrupt ciphertext gives null and does not throw", async () => {
