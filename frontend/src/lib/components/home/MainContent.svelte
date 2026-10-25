@@ -533,7 +533,7 @@
 
                       <!-- Metadata for assistant messages -->
                       {#if message.role === 'assistant' && message.metadata}
-                        <div class="mt-2 text-xs opacity-50">
+                        <div class="mt-2 text-xs text-base-content/60">
                           {#if message.metadata.processing_time_ms}
                             {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
                           {/if}
@@ -543,7 +543,7 @@
                         </div>
                       {/if}
                     </div>
-                    <div class="mt-1 text-xs text-base-content/40">
+                    <div class="mt-1 text-xs text-base-content/60">
                       {new Date(message.created_at).toLocaleTimeString()}
                     </div>
                   </div>
@@ -576,7 +576,7 @@
                   onkeydown={handleKeyDown}
                   placeholder="Ask about your documents…"
                   rows="1"
-                  class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/40"
+                  class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/50"
                 ></textarea>
                 <div class="mt-2 flex justify-end">
                   {#if chatLoading}

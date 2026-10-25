@@ -99,10 +99,10 @@
           <div class="space-y-1 {showProjectsList ? 'block' : 'hidden'}">
             {#each $projects as project}
               <div
-                class="group flex h-9 items-center gap-1 rounded-field px-3 transition-colors hover:bg-base-content/5 {$selectedProject?.id ===
+                class="group flex h-9 items-center gap-1 rounded-field border-l-2 pl-2.5 pr-3 transition-colors {$selectedProject?.id ===
                 project.id
-                  ? 'bg-base-content/10'
-                  : ''}"
+                  ? 'bg-primary/15 border-primary'
+                  : 'border-transparent hover:bg-base-content/5'}"
               >
                 <button
                   class="flex-1 text-left truncate text-sm hover:cursor-pointer {$selectedProject?.id ===

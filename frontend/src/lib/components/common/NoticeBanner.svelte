@@ -12,7 +12,7 @@
   } = $props();
 </script>
 
-<!-- The theme's base colours are all near black, so the banner sits on neutral
+<!-- The base surfaces are close in lightness, so the banner sits on neutral
      to stand out, with the tone shown by the edge and the icon only. -->
 <div
   role="alert"

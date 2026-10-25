@@ -27,7 +27,7 @@
 </div>
 
 <style>
-  /* Answers sit on the black page, so tints are lighter, not darker. */
+  /* Answers sit on a dark page, so tints are lighter, not darker. */
   .chat-markdown {
     color: inherit;
     line-height: 1.6;
@@ -46,8 +46,8 @@
     font-size: 0.75rem;
     font-weight: 700;
     cursor: pointer;
-    background-color: var(--color-primary, #8b5cf6);
-    color: var(--color-primary-content, #fff);
+    background-color: var(--color-primary);
+    color: var(--color-primary-content);
   }
 
   /* Headers */
