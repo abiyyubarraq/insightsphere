@@ -319,17 +319,19 @@
       </button>
     {/if}
 
-    {#if $selectedProject && !rightSidebarOpen}
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm btn-square ml-auto"
-        aria-label="Open documents panel"
-        title="Open documents panel"
-        onclick={onToggleRightSidebar}
-      >
-        <PanelRight class="w-5 h-5 text-base-content/70" />
-      </button>
-    {/if}
+    <div class="ml-auto flex items-center gap-1">
+      {#if $selectedProject && !rightSidebarOpen}
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-square"
+          aria-label="Open documents panel"
+          title="Open documents panel"
+          onclick={onToggleRightSidebar}
+        >
+          <PanelRight class="w-5 h-5 text-base-content/70" />
+        </button>
+      {/if}
+    </div>
   </div>
 
   <!-- Error Notification Display -->
