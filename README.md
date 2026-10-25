@@ -55,7 +55,7 @@ A follow-up question is rewritten into one that stands on its own before it is s
 
 ## Quick start
 
-Needs Docker, Node 22+, a Supabase project and an OpenAI key.
+Needs Docker, Node 24+, a Supabase project and an OpenAI key.
 
 ```bash
 git clone https://github.com/abiyyubarraq/insightsphere.git

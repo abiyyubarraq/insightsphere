@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { Info, TriangleAlert } from 'lucide-svelte';
+
   let {
     isOpen = $bindable(),
     title = 'Confirm Action',
@@ -31,10 +33,47 @@
     oncancel?.();
   };
 
+  let cancelButton: HTMLButtonElement | undefined = $state();
+  let confirmButton: HTMLButtonElement | undefined = $state();
+
+  // Focus starts on Cancel, the safe choice, and goes back to whatever opened
+  // the dialog when it closes. DaisyUI fades the modal in, and focus() does
+  // nothing while it is still visibility:hidden, so retry until it sticks.
+  $effect(() => {
+    const target = cancelButton;
+    if (!isOpen || !target) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const deadline = performance.now() + 1000;
+    let frame = 0;
+    const tryFocus = () => {
+      target.focus();
+      if (document.activeElement !== target && performance.now() < deadline) {
+        frame = requestAnimationFrame(tryFocus);
+      }
+    };
+    tryFocus();
+    return () => {
+      cancelAnimationFrame(frame);
+      opener?.focus();
+    };
+  });
+
   const handleKeydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
       handleCancel();
-    } else if (event.key === 'Enter' && !loading) {
+    } else if (event.key === 'Tab') {
+      // Keep Tab inside the dialog while it is open.
+      const first = cancelButton;
+      const last = confirmButton;
+      if (event.shiftKey && document.activeElement !== last) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement !== first) {
+        event.preventDefault();
+        first?.focus();
+      }
+    } else if (event.key === 'Enter' && !loading && event.target === event.currentTarget) {
+      // Only when the dialog itself has focus; on a button, Enter presses that button.
       handleConfirm();
     }
   };
@@ -43,19 +82,6 @@
   const handleBackdropClick = (event: MouseEvent) => {
     if (event.target === event.currentTarget) {
       handleCancel();
-    }
-  };
-
-  // Get icon component based on type
-  const getIcon = () => {
-    switch (icon) {
-      case 'danger':
-        return '⚠️';
-      case 'info':
-        return 'ℹ️';
-      case 'warning':
-      default:
-        return '⚠️';
     }
   };
 </script>
@@ -73,7 +99,14 @@
   >
     <div class="modal-box">
       <div class="flex items-center gap-3 mb-4">
-        <div class="text-2xl">{getIcon()}</div>
+        {#if icon === 'info'}
+          <Info class="w-5 h-5 shrink-0 text-info" aria-hidden="true" />
+        {:else}
+          <TriangleAlert
+            class="w-5 h-5 shrink-0 {icon === 'danger' ? 'text-error' : 'text-warning'}"
+            aria-hidden="true"
+          />
+        {/if}
         <h3 id="dialog-title" class="font-bold text-lg">{title}</h3>
       </div>
 
@@ -82,10 +115,20 @@
       </p>
 
       <div class="modal-action">
-        <button class="btn btn-ghost" onclick={handleCancel} disabled={loading}>
+        <button
+          bind:this={cancelButton}
+          class="btn btn-ghost"
+          onclick={handleCancel}
+          disabled={loading}
+        >
           {cancelText}
         </button>
-        <button class="btn {confirmClass} gap-2" onclick={handleConfirm} disabled={loading}>
+        <button
+          bind:this={confirmButton}
+          class="btn {confirmClass} gap-2"
+          onclick={handleConfirm}
+          disabled={loading}
+        >
           {#if loading}
             <span class="loading loading-spinner loading-xs"></span>
           {/if}

@@ -1,11 +1,13 @@
 import { createClient, type User } from '@supabase/supabase-js';
 import type {
+  ChatMessage,
   GetConversationHistoryResponse,
   SendMessageRequest,
   SendMessageResponse,
 } from '../../../shared/types/chat';
 import { RETRIEVAL_DEFAULTS } from '../../../shared/constants/index';
 import type { Project, ProjectFile } from '../stores/project';
+import { fetchNewestMessages } from '../lib/chatHistory';
 import type { ListFilesResponse } from '../../../shared/types/index';
 import {
   AuthFormError,
@@ -509,17 +511,10 @@ export const getConversationHistory = async (
       conversation = newConv;
     }
 
-    // Get messages
-    const { data: messages, error: messagesError } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .eq('conversation_id', conversation.id)
-      .order('created_at', { ascending: true })
-      .limit(limit);
-
-    if (messagesError) {
-      throw new Error(`Failed to get messages: ${messagesError.message}`);
-    }
+    const messages = await fetchNewestMessages<ChatMessage>(
+      supabase.from('chat_messages').select('*').eq('conversation_id', conversation.id),
+      limit
+    );
 
     // Get citations for assistant messages
     const assistantMessageIds =

@@ -6,7 +6,7 @@
     X,
     ArrowUp,
     Square,
-    Trash2,
+    SquarePen,
     TriangleAlert,
   } from 'lucide-svelte';
   import { onDestroy, untrack } from 'svelte';
@@ -220,7 +220,8 @@
   };
 
   const handleClearConversation = () => {
-    if (!$selectedProject || !conversationId) return;
+    // A pending answer would land in the emptied chat.
+    if (chatLoading || !$selectedProject || !conversationId) return;
     showClearConfirmDialog = true;
   };
 
@@ -233,12 +234,13 @@
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
-      showClearConfirmDialog = false;
     } catch (error) {
       console.error('Failed to clear conversation:', error);
       chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
     } finally {
       clearLoading = false;
+      // Closing on failure too, so the error banner is not hidden behind the backdrop.
+      showClearConfirmDialog = false;
     }
   };
 
@@ -350,16 +352,6 @@
       </button>
     {/if}
 
-    {#if $selectedProject && !rightSidebarOpen}
-      <button
-        class="absolute right-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
-        onclick={onToggleRightSidebar}
-        title="Open Right Sidebar"
-      >
-        <ChevronLeft class="w-5 h-5 text-base-content/70" />
-      </button>
-    {/if}
-
     {#if !$selectedProject}
       <!-- Empty State - No Project Selected -->
       <div class="flex items-center justify-center mt-33">
@@ -381,8 +373,37 @@
     {:else}
       <!-- Chat Interface -->
       <div class="flex flex-col flex-1 min-h-0 ml-2">
+        <!-- One header row for both buttons. pl-14 keeps it clear of the left sidebar toggle. -->
+        <div class="flex h-12 shrink-0 items-center justify-end gap-1 pl-14 pr-3">
+          {#if hasMessages && !loadingHistory}
+            <!-- The tooltip sits on a wrapper so it still shows while the button is disabled. -->
+            <div class="tooltip tooltip-left" data-tip="New chat">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm btn-square text-base-content/60 hover:text-base-content"
+                onclick={handleClearConversation}
+                disabled={chatLoading}
+                aria-label="New chat"
+              >
+                <SquarePen class="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          {/if}
+          {#if !rightSidebarOpen}
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm btn-square text-base-content/60 hover:text-base-content"
+              onclick={onToggleRightSidebar}
+              aria-label="Open right sidebar"
+              title="Open right sidebar"
+            >
+              <ChevronLeft class="w-4 h-4" aria-hidden="true" />
+            </button>
+          {/if}
+        </div>
+
         <!-- Chat Error Display -->
-        <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
+        <!-- px-14 keeps it clear of the left sidebar toggle. -->
         {#if chatError}
           <div class="mt-4 px-14">
             <NoticeBanner
@@ -599,21 +620,10 @@
                 </div>
               </div>
 
-              <div class="mt-2 flex min-h-6 items-center justify-between gap-2 px-1">
+              <div class="mt-2 flex min-h-6 items-center px-1">
                 <span class="text-xs text-base-content/50">
                   Enter to send, Shift+Enter for a new line
                 </span>
-                {#if hasMessages}
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs gap-1 text-base-content/60"
-                    onclick={handleClearConversation}
-                    title="Clear conversation"
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                    Clear
-                  </button>
-                {/if}
               </div>
 
               {#if !hasMessages}
@@ -628,12 +638,11 @@
   </div>
 </div>
 
-<!-- Clear Conversation Confirmation Dialog -->
 <ConfirmationDialog
   bind:isOpen={showClearConfirmDialog}
-  title="Clear Conversation"
-  message="Are you sure you want to clear this conversation? This action cannot be undone."
-  confirmText="Clear"
+  title="Start a new chat?"
+  message="This deletes the current conversation. This cannot be undone."
+  confirmText="Start new chat"
   cancelText="Cancel"
   confirmClass="btn-error"
   icon="danger"
