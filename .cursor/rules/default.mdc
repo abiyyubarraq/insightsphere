@@ -13,7 +13,7 @@ The application allows users to create multiple projects, upload documents, and 
 
 - **`frontend/`** – Svelte 5 + SvelteKit 2 + TypeScript + TailwindCSS v4 + DaisyUI + Lucide icons
 - **`api/`** – Deno (≥2.5) + Hono for API + RAG orchestration
-- **`doc-parser/`** – Go 1.24 + Gin. PDF via pdftoppm + tesseract, DOCX by reading word/document.xml
+- **`doc-parser/`** – Go 1.26 + Gin. PDF via pdftoppm + tesseract, DOCX by reading word/document.xml
 - **`shared/`** – Types and constants used by both the frontend and the API
 - **`supabase/`** – Migrations. The schema is authoritative here, not in any document
 - **`docker/`, `dev/`** – Local development & deployment configs
