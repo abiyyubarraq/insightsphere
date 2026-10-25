@@ -20,7 +20,7 @@ bug.
 api/            Deno 2.5 + Hono
   lib/          qdrant, openai, supabase, chunking, retrieval, RAG orchestration
   routes/       documents, projects, search, chat, searchFiles
-doc-parser/     Go 1.24 OCR service (Gin + pdftoppm + tesseract)
+doc-parser/     Go 1.26 OCR service (Gin + pdftoppm + tesseract)
 frontend/       SvelteKit 2 + Svelte 5 runes, TailwindCSS v4 + DaisyUI
 shared/         types and constants used by both the frontend and the API
 supabase/       migrations: schema, RLS, constraints
@@ -35,7 +35,7 @@ Running it, changing it, checking it: [dev/README.md](dev/README.md).
 |---|---|
 | Frontend | Svelte 5 + SvelteKit 2, TailwindCSS v4 + DaisyUI, Lucide icons |
 | API | Deno 2.5+ + Hono |
-| Parser | Go 1.24 + Gin, poppler + Tesseract |
+| Parser | Go 1.26 + Gin, poppler + Tesseract |
 | Vectors | Qdrant, one collection per project |
 | Database | Supabase Postgres, RLS on every table |
 | Storage | Supabase Storage |

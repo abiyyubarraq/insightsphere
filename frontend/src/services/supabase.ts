@@ -9,6 +9,12 @@ import { RETRIEVAL_DEFAULTS } from '../../../shared/constants/index';
 import type { Project, ProjectFile } from '../stores/project';
 import { fetchNewestMessages } from '../lib/chatHistory';
 import type { ListFilesResponse } from '../../../shared/types/index';
+import {
+  AuthFormError,
+  classifyRecoverError,
+  classifySignInError,
+  classifyUpdatePasswordError,
+} from '../lib/authForms';
 
 /** An API failure that keeps its HTTP status, so the UI can tell a limit from a crash. */
 export class ApiError extends Error {
@@ -179,10 +185,25 @@ export const signInWithEmail = async (email: string, password: string): Promise<
     email,
     password,
   });
-  if (error || !data.user) {
-    throw new Error(error?.message || 'Failed to sign in');
-  }
+  if (error) throw new AuthFormError(classifySignInError(error));
+  if (!data.user) throw new AuthFormError('unknown');
   return data.user;
+};
+
+// Ask Supabase to email a password reset link. Resolves for unknown emails too.
+export const requestPasswordReset = async (email: string): Promise<void> => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  if (!error) return;
+  const kind = classifyRecoverError(error);
+  if (kind) throw new AuthFormError(kind);
+};
+
+// Set a new password for the signed-in (or recovery) session.
+export const updatePassword = async (password: string): Promise<void> => {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw new AuthFormError(classifyUpdatePasswordError(error));
 };
 
 // Sign-Out

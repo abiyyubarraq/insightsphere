@@ -325,7 +325,6 @@
     // Set the file filter to the filename
     fileFilter = filename;
   };
-
 </script>
 
 <!-- Main Content Area -->
@@ -509,7 +508,9 @@
                                     </button>
                                   </div>
                                   {#if citation.page_number}
-                                    <div class="text-base-content/70">Page {citation.page_number}</div>
+                                    <div class="text-base-content/70">
+                                      Page {citation.page_number}
+                                    </div>
                                   {/if}
                                   <div class="text-base-content/60 mt-1 line-clamp-2">
                                     {citation.text_snippet}

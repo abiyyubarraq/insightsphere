@@ -33,9 +33,7 @@
   // What the picker offers and what the guard below accepts are the same list,
   // and the API enforces the same limits again because an upload goes straight
   // to Supabase Storage and can skip this code entirely.
-  const acceptedExtensions = FILE_CONSTRAINTS.ALLOWED_EXTENSIONS.map(
-    (ext) => '.' + ext
-  ).join(',');
+  const acceptedExtensions = FILE_CONSTRAINTS.ALLOWED_EXTENSIONS.map((ext) => '.' + ext).join(',');
 
   // State management
   let newProjectName = $state('');

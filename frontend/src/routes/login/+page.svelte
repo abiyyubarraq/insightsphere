@@ -2,6 +2,7 @@
   import { signInWithGoogle, signInWithEmail } from '../../services/supabase';
   import { goto } from '$app/navigation';
   import { isAuthenticated } from '../../stores/auth';
+  import { AUTH_ERROR_MESSAGES, AuthFormError } from '$lib/authForms';
   import { Eye, EyeOff, Mail, Lock, Loader2, AlertCircle, X } from 'lucide-svelte';
 
   // Redirect if already authenticated
@@ -42,7 +43,7 @@
       // Redirect to dashboard or home page
       goto('/');
     } catch (err) {
-      error = err instanceof Error ? err.message : 'An unknown error occurred';
+      error = err instanceof AuthFormError ? err.message : AUTH_ERROR_MESSAGES.unknown;
     } finally {
       if (loginType === 'google') {
         loadingLoginWithGoogle = false;
@@ -61,8 +62,8 @@
 
       // Redirect to dashboard or home page
       goto('/');
-    } catch (err: any) {
-      error = err.message;
+    } catch {
+      error = AUTH_ERROR_MESSAGES.unknown;
     } finally {
       loadingLoginWithGoogle = false;
     }
