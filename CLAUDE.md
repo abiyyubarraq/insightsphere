@@ -67,7 +67,10 @@ new code — import it.
 | Storage bucket | `SUPABASE_STORAGE_BUCKET`, default `anotherbrainfileplayground` | `api/lib/config.ts` |
 | Storage path | `{userId}/{projectId}/{timestamp}_{filename}` | `frontend/src/services/supabase.ts` |
 | Daily quotas | per tier in the `quota_tiers` table, not in code; no `user_tiers` row = `basic` | `supabase/migrations/0006_quota.sql` |
-| Burst limit | 20 requests/minute per user on chat, query, process, summary | `api/main.ts` |
+| Burst limit | 20 requests/minute per user on chat, query, process, summary, saving an own key | `api/main.ts` |
+| Own key shape | starts `sk-`, 20 to 300 chars, only `[A-Za-z0-9_-]` | `api/lib/openaiKeyCheck.ts` |
+| Own key check call | one embedding, 10 s timeout, no retries | `api/routes/settings/apiKey.ts` |
+| Own key encryption | AES-256-GCM, new 12-byte IV per save, user id bound in as GCM additional data, secret `KEY_ENCRYPTION_SECRET` | `api/lib/keyCrypto.ts` |
 
 The threshold is low on purpose and has been measured on this corpus. Raising it
 to 0.35 drops real queries: "What is psychological inoculation?" goes from 9
@@ -94,6 +97,9 @@ in: no admin mode, no shared secret, no test routes.
 | `DELETE` | `/v1/projects/:projectId` |
 | `POST` | `/v1/search/query` — raw chunks, no generation |
 | `POST` | `/v1/searchFiles` — file library, filename or semantic |
+| `GET` | `/v1/settings/api-key` — own OpenAI key: `hasKey` and a hint, never the key |
+| `PUT` | `/v1/settings/api-key` — check with one OpenAI call, then save encrypted |
+| `DELETE` | `/v1/settings/api-key` — 200 even when there was no key |
 | `GET` | `/health` |
 
 Chat, query, process and summary answer **429** at a daily quota or the burst
@@ -101,6 +107,13 @@ limit, with a sentence meant for the user in `error`. Process answers **409**
 for a document already processing; summary answers **409** when one exists,
 unless the body has `regenerate: true`. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
+
+The settings routes answer **503** `"Own API keys are not enabled on this
+server."` when `KEY_ENCRYPTION_SECRET` is not set. It is optional, 32 bytes of
+base64, made with `openssl rand -base64 32`. Changing or losing it makes every
+saved key unreadable; `getUserOpenAIKey` then returns null and users save again.
+The keys live in `user_api_keys` (`0007_user_api_keys.sql`), which only the
+service role can touch.
 
 ---
 
@@ -167,7 +180,10 @@ the same model or search returns nothing. A second provider means different
 dimensions. Failing loudly is the cheaper outcome. There is no
 `embeddingClient.ts` and there should not be one again.
 
-**Never log document text.** IDs, lengths and counts only.
+**Never log document text or an API key.** IDs, lengths and counts only.
+OpenAI error messages repeat part of the key, so never log or return them;
+`classifyOpenAIError` reads only `status` and `code`, and `maskSecrets` exists
+for any text that must be logged.
 
 ```ts
 console.log("Processing document:", { documentId, fileName, textLength, chunkCount });

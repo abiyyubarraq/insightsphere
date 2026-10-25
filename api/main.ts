@@ -19,6 +19,7 @@ const [
   { searchFiles },
   { deleteDocument },
   { deleteProject },
+  { getApiKey, putApiKey, deleteApiKey },
   { requireUser },
 ] = await Promise.all([
   import("./routes/documents/process.ts"),
@@ -29,6 +30,7 @@ const [
   import("./routes/searchFiles/search.ts"),
   import("./routes/documents/remove.ts"),
   import("./routes/projects/remove.ts"),
+  import("./routes/settings/apiKey.ts"),
   import("./lib/auth.ts"),
 ]);
 
@@ -90,6 +92,11 @@ api.post("/projects/:projectId/query", requireUser, burst, queryProject);
 api.get("/projects/:projectId/query/suggestions", requireUser, getQuerySuggestions);
 api.post("/projects/:projectId/chat", requireUser, burst, sendChatMessage);
 api.delete("/projects/:projectId", requireUser, deleteProject);
+
+// Settings. PUT makes one OpenAI call to check the key.
+api.get("/settings/api-key", requireUser, getApiKey);
+api.put("/settings/api-key", requireUser, burst, putApiKey);
+api.delete("/settings/api-key", requireUser, deleteApiKey);
 
 app.route("/v1", api);
 

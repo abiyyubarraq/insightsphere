@@ -54,6 +54,14 @@ for t in quota_tiers user_tiers usage_counters; do
     *)                bad "$t: anon got: $(printf '%s' "$body" | head -c 80)" ;;
   esac
 done
+
+echo "== user_api_keys is API-only =="
+body=$(curl -s "$URL/rest/v1/user_api_keys?select=*" -H "apikey: $ANON")
+case "$body" in
+  "[]"|*'"42501"'*) ok "user_api_keys: anon reads nothing" ;;
+  *'"42P01"'*)      bad "user_api_keys: table missing (0007_user_api_keys.sql not applied)" ;;
+  *)                bad "user_api_keys: anon got: $(printf '%s' "$body" | head -c 80)" ;;
+esac
 # 42501 = permission denied. A 404 (PGRST202) would mean the function is
 # missing, which is not a pass.
 resp=$(curl -s -w '\n%{http_code}' -X POST "$URL/rest/v1/rpc/consume_quota" -H "apikey: $ANON" \
@@ -68,6 +76,13 @@ esac
 echo "== every API route needs a token =="
 s=$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/projects/00000000-0000-0000-0000-000000000000/query/suggestions")
 [ "$s" = "401" ] && ok "suggestions without token -> 401" || bad "suggestions without token -> $s (expected 401)"
+s=$(curl -s -o /dev/null -w '%{http_code}' "$API/v1/settings/api-key")
+[ "$s" = "401" ] && ok "GET settings/api-key without token -> 401" || bad "GET settings/api-key without token -> $s (expected 401)"
+fake_key="sk""-not-a-real-key-000000000000"
+put_body='{"apiKey":"'"$fake_key"'"}'
+s=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$API/v1/settings/api-key" \
+    -H 'Content-Type: application/json' -d "$put_body")
+[ "$s" = "401" ] && ok "PUT settings/api-key without token -> 401" || bad "PUT settings/api-key without token -> $s (expected 401)"
 
 echo "== removed endpoints must be gone =="
 for p in /v1/test/config /v1/test/dashboard /v1/test/rag-query; do
