@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Plus, X, Edit3 } from 'lucide-svelte';
+  import { untrack } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import {
     projects,
     selectedProject,
@@ -120,9 +122,29 @@
   let currentSummary = $state('');
   let currentSummaryFileName = $state('');
 
+  // Must match Tailwind's md breakpoint, where the sidebars stop being overlays.
+  const desktop = new MediaQuery('min-width: 768px');
+
   // Sidebar state
-  let leftSidebarOpen = $state(true);
+  let leftSidebarOpen = $state(desktop.current);
   let rightSidebarOpen = $state(false);
+  let overlayOpen = $derived(
+    !desktop.current && (leftSidebarOpen || (rightSidebarOpen && !!$selectedProject))
+  );
+
+  // Two in-flow sidebars would become two stacked overlays after shrinking the window.
+  $effect(() => {
+    if (desktop.current) return;
+    untrack(() => {
+      leftSidebarOpen = false;
+      rightSidebarOpen = false;
+    });
+  });
+
+  const closeOverlays = () => {
+    leftSidebarOpen = false;
+    rightSidebarOpen = false;
+  };
 
   // Projects list state
   let showProjectsList = $state(false);
@@ -454,6 +476,11 @@
     rightSidebarOpen = !rightSidebarOpen;
   };
 
+  const selectProject = async (project: Project) => {
+    if (!desktop.current) leftSidebarOpen = false;
+    await refreshProjectFiles(project);
+  };
+
   const toggleShowProjectsList = () => {
     showProjectsList = !showProjectsList;
   };
@@ -555,10 +582,16 @@
 />
 
 <!-- Main Layout Container -->
-<div
-  class="relative h-screen bg-cover bg-center bg-no-repeat"
-  style="background-image: url('/dashboard.png'); overflow: hidden;"
->
+<div class="relative flex h-dvh overflow-hidden bg-base-100">
+  {#if overlayOpen}
+    <button
+      type="button"
+      class="fixed inset-0 z-20 bg-base-100/70 md:hidden"
+      aria-label="Close sidebar"
+      onclick={closeOverlays}
+    ></button>
+  {/if}
+
   <!-- Left Sidebar -->
   <LeftSidebar
     bind:leftSidebarOpen
@@ -567,9 +600,25 @@
     onToggleLeftSidebar={toggleLeftSidebar}
     onNavClick={handleNavClick}
     onToggleProjectsList={toggleShowProjectsList}
-    onRefreshProjectFiles={refreshProjectFiles}
+    onRefreshProjectFiles={selectProject}
     onRenameProject={handleRenameProject}
     onDeleteProject={handleDeleteProject}
+  />
+
+  <!-- Main Content -->
+  <MainContent
+    bind:leftSidebarOpen
+    bind:rightSidebarOpen
+    bind:errorNotif
+    {errorTone}
+    bind:successNotif
+    bind:uploadLoading
+    bind:fileFilter
+    onToggleLeftSidebar={toggleLeftSidebar}
+    onToggleRightSidebar={toggleRightSidebar}
+    onCreateNewProject={handleCreateNewProject}
+    onClearErrorNotif={() => (errorNotif = '')}
+    onClearSuccessNotif={clearSuccessNotif}
   />
 
   <!-- Right Sidebar -->
@@ -592,22 +641,6 @@
     onFileOpenSummary={handleFileOpenSummary}
     onFileGenerateSummary={handleFileGenerateSummary}
     onUploadClick={handleUploadClick}
-  />
-
-  <!-- Main Content -->
-  <MainContent
-    bind:leftSidebarOpen
-    bind:rightSidebarOpen
-    bind:errorNotif
-    {errorTone}
-    bind:successNotif
-    bind:uploadLoading
-    bind:fileFilter
-    onToggleLeftSidebar={toggleLeftSidebar}
-    onToggleRightSidebar={toggleRightSidebar}
-    onCreateNewProject={handleCreateNewProject}
-    onClearErrorNotif={() => (errorNotif = '')}
-    onClearSuccessNotif={clearSuccessNotif}
   />
 </div>
 

@@ -1,14 +1,5 @@
 <script lang="ts">
-  import {
-    ChevronLeft,
-    ChevronRight,
-    Plus,
-    X,
-    ArrowUp,
-    Square,
-    Trash2,
-    TriangleAlert,
-  } from 'lucide-svelte';
+  import { PanelLeft, PanelRight, X, ArrowUp, Square, Trash2, TriangleAlert } from 'lucide-svelte';
   import { onDestroy, untrack } from 'svelte';
   import { selectedProject, projects } from '../../../stores/project';
   import { user } from '../../../stores/auth';
@@ -312,21 +303,45 @@
 </script>
 
 <!-- Main Content Area -->
-<div
-  class="bg-base-100/30 h-screen flex flex-col transition-all duration-300 {leftSidebarOpen
-    ? 'ml-50'
-    : 'ml-0'} {rightSidebarOpen ? 'mr-80' : 'mr-0'}"
->
+<div class="flex h-full min-w-0 flex-1 flex-col bg-base-100">
+  <!-- Each open button sits where that sidebar's close button is, so the
+       control does not move when the sidebar opens or closes. -->
+  <div class="flex h-12 shrink-0 items-center px-3">
+    {#if !leftSidebarOpen}
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-square"
+        aria-label="Open sidebar"
+        title="Open sidebar"
+        onclick={onToggleLeftSidebar}
+      >
+        <PanelLeft class="w-5 h-5 text-base-content/70" />
+      </button>
+    {/if}
+
+    {#if $selectedProject && !rightSidebarOpen}
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-square ml-auto"
+        aria-label="Open documents panel"
+        title="Open documents panel"
+        onclick={onToggleRightSidebar}
+      >
+        <PanelRight class="w-5 h-5 text-base-content/70" />
+      </button>
+    {/if}
+  </div>
+
   <!-- Error Notification Display -->
   {#if errorNotif}
-    <div class="mt-4 px-14">
+    <div class="mb-2 px-4">
       <NoticeBanner message={errorNotif} tone={errorTone} ondismiss={onClearErrorNotif} />
     </div>
   {/if}
 
   <!-- Success Notification Display -->
   {#if successNotif}
-    <div class="flex justify-center mt-4 text-center">
+    <div class="flex justify-center mb-2 px-4 text-center">
       <div class="alert alert-success w-auto max-w-md relative pr-10">
         <span class="text-center flex-1">{successNotif}</span>
         <div class="absolute top-2.5 right-2.5">
@@ -339,52 +354,33 @@
   {/if}
 
   <!-- Main Content -->
-  <div class="flex-1 flex flex-col w-full h-full">
-    {#if !leftSidebarOpen}
-      <button
-        class="absolute left-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
-        onclick={onToggleLeftSidebar}
-        title="Open Left Sidebar"
-      >
-        <ChevronRight class="w-4 h-4 text-base-content/70" />
-      </button>
-    {/if}
-
-    {#if $selectedProject && !rightSidebarOpen}
-      <button
-        class="absolute right-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
-        onclick={onToggleRightSidebar}
-        title="Open Right Sidebar"
-      >
-        <ChevronLeft class="w-5 h-5 text-base-content/70" />
-      </button>
-    {/if}
-
+  <div class="flex min-h-0 flex-1 flex-col">
     {#if !$selectedProject}
       <!-- Empty State - No Project Selected -->
-      <div class="flex items-center justify-center mt-33">
-        <div class="text-center space-y-6 max-w-md w-full">
-          <div class="text-6xl">🧠</div>
-          <h2 class="text-3xl font-bold">Welcome to InsightSphere</h2>
-          <p class="text-base-content/70 text-lg">
-            Select a project to start chatting with your documents or create a new project to get
-            started.
-          </p>
-          {#if $projects.length === 0}
-            <button class="btn btn-primary btn-lg gap-2" onclick={onCreateNewProject}>
-              <Plus class="w-5 h-5" />
-              Create Your First Project
-            </button>
-          {/if}
+      <div class="flex flex-1 flex-col justify-center pb-16">
+        <div class="mx-auto w-full max-w-3xl px-4">
+          <div class="px-1">
+            {#if $projects.length > 0}
+              <h2 class="text-2xl font-medium text-balance">Select a project</h2>
+              <p class="mt-2 text-sm text-base-content/60">
+                Pick one in the sidebar to ask questions about its documents, or start a new one.
+              </p>
+            {:else}
+              <h2 class="text-2xl font-medium text-balance">Create your first project</h2>
+              <p class="mt-2 text-sm text-base-content/60">
+                A project holds the documents you want to ask questions about.
+              </p>
+            {/if}
+            <button class="btn btn-primary mt-6" onclick={onCreateNewProject}>New project</button>
+          </div>
         </div>
       </div>
     {:else}
       <!-- Chat Interface -->
-      <div class="flex flex-col flex-1 min-h-0 ml-2">
+      <div class="flex flex-col flex-1 min-h-0">
         <!-- Chat Error Display -->
-        <!-- px-14 keeps it clear of the sidebar toggles pinned to both edges. -->
         {#if chatError}
-          <div class="mt-4 px-14">
+          <div class="mb-2 px-4">
             <NoticeBanner
               message={chatError}
               tone={chatErrorTone}
@@ -400,14 +396,20 @@
         {:else}
           {#if hasMessages}
             <!-- Chat Messages Area -->
-            <div class="flex-1 p-6 overflow-y-auto min-h-0" bind:this={messagesContainer}>
-              <div class="space-y-6 max-w-4xl mx-auto">
+            <!-- Gutter on both edges keeps the column centred in the window when a scrollbar shows. -->
+            <div
+              class="flex-1 overflow-y-auto min-h-0 py-6 [scrollbar-gutter:stable_both-edges]"
+              bind:this={messagesContainer}
+            >
+              <div class="mx-auto w-full max-w-3xl space-y-8 px-4">
                 {#each chatMessages as message (message.id)}
-                  <div class="chat {message.role === 'user' ? 'chat-end' : 'chat-start'}">
+                  <div
+                    class="flex flex-col {message.role === 'user' ? 'items-end' : 'items-start'}"
+                  >
                     <div
-                      class="chat-bubble {message.role === 'user'
-                        ? 'chat-bubble-primary'
-                        : 'chat-bubble-secondary'}"
+                      class={message.role === 'user'
+                        ? 'max-w-[85%] rounded-box border border-base-content/10 bg-base-200 px-4 py-2.5'
+                        : 'w-full text-base-content/90'}
                     >
                       {#if message.content}
                         {#if message.role === 'assistant'}
@@ -439,8 +441,8 @@
 
                       <!-- Citations for assistant messages -->
                       {#if message.role === 'assistant' && message.citations && message.citations.length > 0}
-                        <div class="mt-3 pt-3 border-t border-base-content/20">
-                          <div class="text-xs font-semibold mb-2 opacity-70">
+                        <div class="mt-4 pt-3 border-t border-base-content/10">
+                          <div class="text-xs font-medium mb-2 text-base-content/60">
                             Sources ({message.citations.length}):
                           </div>
                           <div class="space-y-2">
@@ -478,7 +480,7 @@
                             {/each}
                             {#if getVisibleCitationsCount(message.id, message.citations.length) < message.citations.length}
                               <button
-                                class="btn btn-ghost btn-xs gap-1 text-white hover:text-primary-focus"
+                                class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
                                 onclick={() => showMoreCitations(message.id)}
                               >
                                 <span
@@ -539,7 +541,7 @@
                         </div>
                       {/if}
                     </div>
-                    <div class="chat-footer opacity-50 text-xs mt-1">
+                    <div class="mt-1 text-xs text-base-content/40">
                       {new Date(message.created_at).toLocaleTimeString()}
                     </div>
                   </div>
@@ -549,8 +551,8 @@
           {/if}
 
           <!-- One composer for both layouts, so the draft and focus survive the move. -->
-          <div class="px-6 pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
-            <div class="w-full max-w-4xl mx-auto">
+          <div class="pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
+            <div class="mx-auto w-full max-w-3xl px-4">
               {#if !hasMessages}
                 <div class="mb-6 px-1">
                   <h2 class="text-2xl font-medium text-balance">What do you want to know?</h2>

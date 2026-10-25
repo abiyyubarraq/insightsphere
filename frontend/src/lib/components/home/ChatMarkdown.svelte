@@ -27,9 +27,12 @@
 </div>
 
 <style>
+  /* Answers sit on the black page, so tints are lighter, not darker. */
   .chat-markdown {
     color: inherit;
     line-height: 1.6;
+    --md-tint: color-mix(in oklab, var(--color-base-content) 8%, transparent);
+    --md-rule: color-mix(in oklab, var(--color-base-content) 20%, transparent);
   }
 
   .chat-markdown :global(.citation-chip) {
@@ -87,7 +90,7 @@
 
   /* Code */
   .chat-markdown :global(code) {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: var(--md-tint);
     padding: 0.125rem 0.25rem;
     border-radius: 0.25rem;
     font-size: 0.875em;
@@ -95,7 +98,7 @@
   }
 
   .chat-markdown :global(pre) {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: var(--md-tint);
     padding: 0.75rem;
     border-radius: 0.5rem;
     overflow-x: auto;
@@ -109,7 +112,7 @@
 
   /* Blockquotes */
   .chat-markdown :global(blockquote) {
-    border-left: 4px solid rgba(0, 0, 0, 0.2);
+    border-left: 4px solid var(--md-rule);
     padding-left: 1rem;
     margin: 0.5rem 0;
     font-style: italic;
@@ -124,13 +127,13 @@
 
   .chat-markdown :global(th),
   .chat-markdown :global(td) {
-    border: 1px solid rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--md-rule);
     padding: 0.5rem;
     text-align: left;
   }
 
   .chat-markdown :global(th) {
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: var(--md-tint);
     font-weight: bold;
   }
 </style>

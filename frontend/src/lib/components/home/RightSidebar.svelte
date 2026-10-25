@@ -6,7 +6,7 @@
     Loader,
     CircleOff,
     Folder,
-    PanelLeftOpen,
+    PanelRightClose,
     X,
   } from 'lucide-svelte';
   import { selectedProject, type ProjectFile } from '../../../stores/project';
@@ -55,26 +55,30 @@
   }>();
 </script>
 
-<!-- Right Sidebar - Absolute positioned -->
+<!-- Below md it is an overlay that slides in; from md up it takes its place in the row. -->
 {#if $selectedProject}
-  <div
-    class="bg-base-100/50 absolute right-0 top-0 bottom-0 w-80 border-l border-base-300 border-l-white transition-all duration-500 {rightSidebarOpen
-      ? 'translate-x-0 opacity-100'
-      : 'translate-x-full opacity-0 pointer-events-none'} z-10"
+  <aside
+    class="fixed inset-y-0 right-0 z-30 w-80 overflow-hidden md:static md:z-auto md:translate-x-0 motion-safe:transition-[width,translate] motion-safe:duration-200 motion-safe:ease-out {rightSidebarOpen
+      ? 'translate-x-0 md:w-80'
+      : 'translate-x-full md:w-0'}"
+    inert={!rightSidebarOpen}
+    aria-label="Documents"
   >
-    <div class="flex flex-col h-full">
-      <div class="p-4 border-b border-base-300">
-        <div class="flex items-center justify-between mb-3">
-          <h3 class="text-lg font-semibold flex items-center gap-2">
-            <Folder class="w-5 h-5" />
+    <div class="flex h-full w-80 flex-col border-l border-base-content/10 bg-base-200">
+      <div class="border-b border-base-content/10 px-3 pb-3">
+        <div class="flex h-12 items-center justify-between gap-2">
+          <h3 class="flex items-center gap-2 px-2 text-sm font-medium">
+            <Folder class="w-4 h-4 text-base-content/70" />
             Documents
           </h3>
           <button
-            class="btn btn-ghost btn-sm"
-            title="Close Right Sidebar"
+            type="button"
+            class="btn btn-ghost btn-sm btn-square"
+            aria-label="Close documents panel"
+            title="Close documents panel"
             onclick={onToggleRightSidebar}
           >
-            <PanelLeftOpen class="w-4 h-4 text-base-content/70" />
+            <PanelRightClose class="w-5 h-5 text-base-content/70" />
           </button>
         </div>
 
@@ -106,12 +110,12 @@
       {:else}
         <!-- File List with max height and scroll -->
         <div class="flex-1 overflow-hidden flex flex-col">
-          <div class="flex-1 overflow-y-auto p-4 min-h-0">
+          <div class="flex-1 overflow-y-auto p-3 min-h-0">
             {#if uploadedFiles.length > 0}
               {#if filteredFiles.length > 0}
                 <div class="space-y-2">
                   {#each filteredFiles as file}
-                    <div class="card bg-base-100 shadow-sm">
+                    <div class="card border border-base-content/10 bg-base-100">
                       <div class="card-body p-3">
                         <div class="flex items-start gap-3">
                           <!-- File Status Icon -->
@@ -168,21 +172,19 @@
                 </div>
               {:else}
                 <div class="text-center py-8">
-                  <div class="text-4xl mb-4">🔍</div>
-                  <p class="text-base-content/70">No files match your filter</p>
+                  <p class="text-sm text-base-content/70">No files match your filter</p>
                   <p class="text-sm text-base-content/50 mt-1">Try a different search term</p>
                 </div>
               {/if}
             {:else}
               <div class="text-center py-8">
-                <div class="text-4xl mb-4">📄</div>
-                <p class="text-base-content/70">No documents uploaded yet</p>
+                <p class="text-sm text-base-content/70">No documents uploaded yet</p>
               </div>
             {/if}
           </div>
 
           <!-- Upload Button at Bottom -->
-          <div class="p-4 border-t border-base-300">
+          <div class="p-3 border-t border-base-content/10">
             <button
               class="btn btn-primary btn-sm w-full gap-2"
               onclick={onUploadClick}
@@ -199,5 +201,5 @@
         </div>
       {/if}
     </div>
-  </div>
+  </aside>
 {/if}
