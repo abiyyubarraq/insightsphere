@@ -17,15 +17,17 @@ export interface ConversationMessagesQuery<T> {
 }
 
 /**
- * Newest `limit` messages, oldest first.
+ * Newest `limit` messages, oldest first, and whether older ones exist.
  * The limit has to apply to a newest-first query; ascending plus limit keeps the oldest ones.
+ * It asks for one extra row: if that row comes back, there is more history.
  */
 export const fetchNewestMessages = async <T>(
   query: ConversationMessagesQuery<T>,
   limit: number
-): Promise<T[]> => {
-  const { data, error } = await query.order('created_at', { ascending: false }).limit(limit);
+): Promise<{ messages: T[]; hasMore: boolean }> => {
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(limit + 1);
 
   if (error) throw new Error(`Failed to get messages: ${error.message}`);
-  return (data ?? []).reverse();
+  const rows = data ?? [];
+  return { messages: rows.slice(0, limit).reverse(), hasMore: rows.length > limit };
 };

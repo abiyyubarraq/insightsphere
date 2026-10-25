@@ -46,7 +46,7 @@ describe('loading the newest chat messages', () => {
   it('keeps the newest 50 of 60 messages', async () => {
     const { query } = fakeQuery(conversation(60));
 
-    const messages = await fetchNewestMessages(query, 50);
+    const { messages } = await fetchNewestMessages(query, 50);
 
     expect(messages).toHaveLength(50);
     expect(messages[0].id).toBe('msg-11');
@@ -58,7 +58,7 @@ describe('loading the newest chat messages', () => {
   it('returns the messages in time order', async () => {
     const { query } = fakeQuery(conversation(5));
 
-    const messages = await fetchNewestMessages(query, 50);
+    const { messages } = await fetchNewestMessages(query, 50);
 
     expect(messages.map((m) => m.id)).toEqual(['msg-01', 'msg-02', 'msg-03', 'msg-04', 'msg-05']);
   });
@@ -68,13 +68,28 @@ describe('loading the newest chat messages', () => {
 
     await fetchNewestMessages(query, 50);
 
-    expect(recorded).toEqual({ order: ['created_at', { ascending: false }], limit: 50 });
+    expect(recorded).toEqual({ order: ['created_at', { ascending: false }], limit: 51 });
   });
 
   it('returns an empty list for an empty conversation', async () => {
     const { query } = fakeQuery([]);
 
-    expect(await fetchNewestMessages(query, 50)).toEqual([]);
+    expect(await fetchNewestMessages(query, 50)).toEqual({ messages: [], hasMore: false });
+  });
+
+  // has_more was length >= limit, so a chat with exactly 50 messages offered
+  // older history that did not exist.
+  it.each([
+    [49, false],
+    [50, false],
+    [51, true],
+  ])('reports hasMore for %i messages', async (count, expected) => {
+    const { query } = fakeQuery(conversation(count));
+
+    const { messages, hasMore } = await fetchNewestMessages(query, 50);
+
+    expect(hasMore).toBe(expected);
+    expect(messages).toHaveLength(Math.min(count, 50));
   });
 
   // A failed read must not look like an empty chat.

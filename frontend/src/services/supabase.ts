@@ -511,7 +511,7 @@ export const getConversationHistory = async (
       conversation = newConv;
     }
 
-    const messages = await fetchNewestMessages<ChatMessage>(
+    const { messages, hasMore } = await fetchNewestMessages<ChatMessage>(
       supabase.from('chat_messages').select('*').eq('conversation_id', conversation.id),
       limit
     );
@@ -558,7 +558,7 @@ export const getConversationHistory = async (
       success: true,
       conversation,
       messages: messagesWithCitations,
-      has_more: messagesWithCitations.length >= limit,
+      has_more: hasMore,
     };
   } catch (error) {
     console.error('Failed to get conversation history:', error);

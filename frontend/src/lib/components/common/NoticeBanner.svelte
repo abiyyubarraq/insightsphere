@@ -12,12 +12,12 @@
   } = $props();
 </script>
 
-<!-- The theme's base colours are all near black, so the banner sits on neutral
+<!-- The base surfaces are close in lightness, so the banner sits on neutral
      to stand out, with the tone shown by the edge and the icon only. -->
 <div
   role="alert"
   class="alert w-full max-w-2xl mx-auto flex items-start gap-3 py-3 px-4 text-sm
-    bg-neutral/70 backdrop-blur-sm shadow-lg border border-base-content/10 border-l-4
+    bg-neutral/70 border border-base-content/10 border-l-4
     {tone === 'warning' ? 'border-l-warning' : 'border-l-error'}"
 >
   {#if tone === 'warning'}

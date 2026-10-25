@@ -1,8 +1,7 @@
 <script lang="ts">
   import {
-    ChevronLeft,
-    ChevronRight,
-    Plus,
+    PanelLeft,
+    PanelRight,
     X,
     ArrowUp,
     Square,
@@ -219,10 +218,26 @@
     textareaEl?.focus();
   };
 
-  const handleClearConversation = () => {
+  const handleClearConversation = async () => {
     // A pending answer would land in the emptied chat.
-    if (chatLoading || !$selectedProject || !conversationId) return;
-    showClearConfirmDialog = true;
+    if (chatLoading || clearLoading || !$selectedProject) return;
+    if (conversationId) {
+      showClearConfirmDialog = true;
+      return;
+    }
+    // No id yet, but a Stopped or failed send may have saved the question already.
+    // Delete it without a dialog, or the next send would bring it back.
+    try {
+      clearLoading = true;
+      await deleteConversationHistory($selectedProject.id);
+      chatMessages = [];
+      chatError = '';
+    } catch (error) {
+      console.error('Failed to clear conversation:', error);
+      chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
+    } finally {
+      clearLoading = false;
+    }
   };
 
   const confirmClearConversation = async () => {
@@ -292,9 +307,9 @@
         });
 
         // Add a temporary highlight effect
-        citationElement.classList.add('bg-primary/20', 'ring-2', 'ring-primary/50');
+        citationElement.classList.add('citation-highlight');
         setTimeout(() => {
-          citationElement.classList.remove('bg-primary/20', 'ring-2', 'ring-primary/50');
+          citationElement.classList.remove('citation-highlight');
         }, 2000);
       }
     }, 100);
@@ -310,25 +325,64 @@
     // Set the file filter to the filename
     fileFilter = filename;
   };
-
 </script>
 
 <!-- Main Content Area -->
-<div
-  class="bg-base-100/30 h-screen flex flex-col transition-all duration-300 {leftSidebarOpen
-    ? 'ml-50'
-    : 'ml-0'} {rightSidebarOpen ? 'mr-80' : 'mr-0'}"
->
+<div class="flex h-full min-w-0 flex-1 flex-col bg-base-100">
+  <!-- Each open button sits where that sidebar's close button is, so the
+       control does not move when the sidebar opens or closes. -->
+  <div class="flex h-12 shrink-0 items-center px-3">
+    {#if !leftSidebarOpen}
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-square"
+        aria-label="Open sidebar"
+        title="Open sidebar"
+        onclick={onToggleLeftSidebar}
+      >
+        <PanelLeft class="w-5 h-5 text-base-content/70" />
+      </button>
+    {/if}
+
+    <div class="ml-auto flex items-center gap-1">
+      {#if $selectedProject && hasMessages && !loadingHistory}
+        <!-- The tooltip sits on a wrapper so it still shows while the button is disabled. -->
+        <div class="tooltip tooltip-bottom" data-tip="New chat">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-square"
+            aria-label="New chat"
+            onclick={handleClearConversation}
+            disabled={chatLoading || clearLoading}
+          >
+            <SquarePen class="w-5 h-5 text-base-content/70" aria-hidden="true" />
+          </button>
+        </div>
+      {/if}
+      {#if $selectedProject && !rightSidebarOpen}
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-square"
+          aria-label="Open documents panel"
+          title="Open documents panel"
+          onclick={onToggleRightSidebar}
+        >
+          <PanelRight class="w-5 h-5 text-base-content/70" />
+        </button>
+      {/if}
+    </div>
+  </div>
+
   <!-- Error Notification Display -->
   {#if errorNotif}
-    <div class="mt-4 px-14">
+    <div class="mb-2 px-4">
       <NoticeBanner message={errorNotif} tone={errorTone} ondismiss={onClearErrorNotif} />
     </div>
   {/if}
 
   <!-- Success Notification Display -->
   {#if successNotif}
-    <div class="flex justify-center mt-4 text-center">
+    <div class="flex justify-center mb-2 px-4 text-center">
       <div class="alert alert-success w-auto max-w-md relative pr-10">
         <span class="text-center flex-1">{successNotif}</span>
         <div class="absolute top-2.5 right-2.5">
@@ -341,71 +395,33 @@
   {/if}
 
   <!-- Main Content -->
-  <div class="flex-1 flex flex-col w-full h-full">
-    {#if !leftSidebarOpen}
-      <button
-        class="absolute left-0 top-0 mt-5 btn btn-sm w-3/100 transition-all duration-500 border-accent"
-        onclick={onToggleLeftSidebar}
-        title="Open Left Sidebar"
-      >
-        <ChevronRight class="w-4 h-4 text-base-content/70" />
-      </button>
-    {/if}
-
+  <div class="flex min-h-0 flex-1 flex-col">
     {#if !$selectedProject}
       <!-- Empty State - No Project Selected -->
-      <div class="flex items-center justify-center mt-33">
-        <div class="text-center space-y-6 max-w-md w-full">
-          <div class="text-6xl">🧠</div>
-          <h2 class="text-3xl font-bold">Welcome to InsightSphere</h2>
-          <p class="text-base-content/70 text-lg">
-            Select a project to start chatting with your documents or create a new project to get
-            started.
-          </p>
-          {#if $projects.length === 0}
-            <button class="btn btn-primary btn-lg gap-2" onclick={onCreateNewProject}>
-              <Plus class="w-5 h-5" />
-              Create Your First Project
-            </button>
-          {/if}
+      <div class="flex flex-1 flex-col justify-center pb-16">
+        <div class="mx-auto w-full max-w-3xl px-4">
+          <div class="px-1">
+            {#if $projects.length > 0}
+              <h2 class="text-2xl font-medium text-balance">Select a project</h2>
+              <p class="mt-2 text-sm text-base-content/60">
+                Pick one in the sidebar to ask questions about its documents, or start a new one.
+              </p>
+            {:else}
+              <h2 class="text-2xl font-medium text-balance">Create your first project</h2>
+              <p class="mt-2 text-sm text-base-content/60">
+                A project holds the documents you want to ask questions about.
+              </p>
+            {/if}
+            <button class="btn btn-primary mt-6" onclick={onCreateNewProject}>New project</button>
+          </div>
         </div>
       </div>
     {:else}
       <!-- Chat Interface -->
-      <div class="flex flex-col flex-1 min-h-0 ml-2">
-        <!-- One header row for both buttons. pl-14 keeps it clear of the left sidebar toggle. -->
-        <div class="flex h-12 shrink-0 items-center justify-end gap-1 pl-14 pr-3">
-          {#if hasMessages && !loadingHistory}
-            <!-- The tooltip sits on a wrapper so it still shows while the button is disabled. -->
-            <div class="tooltip tooltip-left" data-tip="New chat">
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm btn-square text-base-content/60 hover:text-base-content"
-                onclick={handleClearConversation}
-                disabled={chatLoading}
-                aria-label="New chat"
-              >
-                <SquarePen class="w-4 h-4" aria-hidden="true" />
-              </button>
-            </div>
-          {/if}
-          {#if !rightSidebarOpen}
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm btn-square text-base-content/60 hover:text-base-content"
-              onclick={onToggleRightSidebar}
-              aria-label="Open right sidebar"
-              title="Open right sidebar"
-            >
-              <ChevronLeft class="w-4 h-4" aria-hidden="true" />
-            </button>
-          {/if}
-        </div>
-
+      <div class="flex flex-col flex-1 min-h-0">
         <!-- Chat Error Display -->
-        <!-- px-14 keeps it clear of the left sidebar toggle. -->
         {#if chatError}
-          <div class="mt-4 px-14">
+          <div class="mb-2 px-4">
             <NoticeBanner
               message={chatError}
               tone={chatErrorTone}
@@ -421,14 +437,20 @@
         {:else}
           {#if hasMessages}
             <!-- Chat Messages Area -->
-            <div class="flex-1 p-6 overflow-y-auto min-h-0" bind:this={messagesContainer}>
-              <div class="space-y-6 max-w-4xl mx-auto">
+            <!-- Gutter on both edges keeps the column centred in the window when a scrollbar shows. -->
+            <div
+              class="flex-1 overflow-y-auto min-h-0 py-6 [scrollbar-gutter:stable_both-edges]"
+              bind:this={messagesContainer}
+            >
+              <div class="mx-auto w-full max-w-3xl space-y-8 px-4">
                 {#each chatMessages as message (message.id)}
-                  <div class="chat {message.role === 'user' ? 'chat-end' : 'chat-start'}">
+                  <div
+                    class="flex flex-col {message.role === 'user' ? 'items-end' : 'items-start'}"
+                  >
                     <div
-                      class="chat-bubble {message.role === 'user'
-                        ? 'chat-bubble-primary'
-                        : 'chat-bubble-secondary'}"
+                      class={message.role === 'user'
+                        ? 'max-w-[85%] rounded-box border border-base-content/10 bg-base-200 px-4 py-2.5'
+                        : 'w-full text-base-content/90'}
                     >
                       {#if message.content}
                         {#if message.role === 'assistant'}
@@ -460,15 +482,15 @@
 
                       <!-- Citations for assistant messages -->
                       {#if message.role === 'assistant' && message.citations && message.citations.length > 0}
-                        <div class="mt-3 pt-3 border-t border-base-content/20">
-                          <div class="text-xs font-semibold mb-2 opacity-70">
+                        <div class="mt-4 pt-3 border-t border-base-content/10">
+                          <div class="text-xs font-medium mb-2 text-base-content/60">
                             Sources ({message.citations.length}):
                           </div>
                           <div class="space-y-2">
                             {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
                               <div
                                 id="citation-{message.id}-{index}"
-                                class="flex items-start gap-2 text-xs opacity-80 transition-all duration-300"
+                                class="flex items-start gap-2 text-xs transition-all duration-300"
                               >
                                 <div class="flex-1">
                                   <div class="font-medium">
@@ -486,12 +508,14 @@
                                     </button>
                                   </div>
                                   {#if citation.page_number}
-                                    <div class="opacity-70">Page {citation.page_number}</div>
+                                    <div class="text-base-content/70">
+                                      Page {citation.page_number}
+                                    </div>
                                   {/if}
-                                  <div class="opacity-60 mt-1 line-clamp-2">
+                                  <div class="text-base-content/60 mt-1 line-clamp-2">
                                     {citation.text_snippet}
                                   </div>
-                                  <div class="opacity-50 mt-1">
+                                  <div class="text-base-content/60 mt-1">
                                     Relevance: {(citation.similarity_score * 100).toFixed(0)}%
                                   </div>
                                 </div>
@@ -499,7 +523,7 @@
                             {/each}
                             {#if getVisibleCitationsCount(message.id, message.citations.length) < message.citations.length}
                               <button
-                                class="btn btn-ghost btn-xs gap-1 text-white hover:text-primary-focus"
+                                class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
                                 onclick={() => showMoreCitations(message.id)}
                               >
                                 <span
@@ -550,7 +574,7 @@
 
                       <!-- Metadata for assistant messages -->
                       {#if message.role === 'assistant' && message.metadata}
-                        <div class="mt-2 text-xs opacity-50">
+                        <div class="mt-2 text-xs text-base-content/60">
                           {#if message.metadata.processing_time_ms}
                             {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
                           {/if}
@@ -560,7 +584,7 @@
                         </div>
                       {/if}
                     </div>
-                    <div class="chat-footer opacity-50 text-xs mt-1">
+                    <div class="mt-1 text-xs text-base-content/60">
                       {new Date(message.created_at).toLocaleTimeString()}
                     </div>
                   </div>
@@ -570,8 +594,8 @@
           {/if}
 
           <!-- One composer for both layouts, so the draft and focus survive the move. -->
-          <div class="px-6 pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
-            <div class="w-full max-w-4xl mx-auto">
+          <div class="pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
+            <div class="mx-auto w-full max-w-3xl px-4">
               {#if !hasMessages}
                 <div class="mb-6 px-1">
                   <h2 class="text-2xl font-medium text-balance">What do you want to know?</h2>
@@ -593,7 +617,7 @@
                   onkeydown={handleKeyDown}
                   placeholder="Ask about your documents…"
                   rows="1"
-                  class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/40"
+                  class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/50"
                 ></textarea>
                 <div class="mt-2 flex justify-end">
                   {#if chatLoading}
@@ -654,8 +678,8 @@
 <style>
   /* Citation highlight effect for clicked citations */
   :global(.citation-highlight) {
-    background-color: rgba(var(--p) / 0.2);
-    box-shadow: 0 0 0 2px rgba(var(--p) / 0.5);
+    background-color: color-mix(in oklab, var(--color-primary) 20%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 50%, transparent);
     border-radius: 0.375rem;
     padding: 0.25rem;
     margin: -0.25rem;
