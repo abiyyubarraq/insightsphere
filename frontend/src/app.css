@@ -41,3 +41,42 @@ body {
   background-color: var(--color-base-100);
   color: var(--color-base-content);
 }
+
+/* Thin, quiet scrollbars everywhere. DaisyUI sets scrollbar-color on :root, and
+   Chromium then ignores ::-webkit-scrollbar, so it is reset to auto there.
+   Firefox does not know the webkit rules and gets the standard properties. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  :root {
+    scrollbar-color: auto;
+  }
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-base-content) 20%, transparent) transparent;
+  }
+}

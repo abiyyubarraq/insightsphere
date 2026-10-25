@@ -1,5 +1,13 @@
 <script lang="ts">
-  import { PanelLeft, PanelRight, X, ArrowUp, Square, Trash2, TriangleAlert } from 'lucide-svelte';
+  import {
+    PanelLeft,
+    PanelRight,
+    X,
+    ArrowUp,
+    Square,
+    SquarePen,
+    TriangleAlert,
+  } from 'lucide-svelte';
   import { onDestroy, untrack } from 'svelte';
   import { selectedProject, projects } from '../../../stores/project';
   import { user } from '../../../stores/auth';
@@ -211,7 +219,14 @@
   };
 
   const handleClearConversation = () => {
-    if (!$selectedProject || !conversationId) return;
+    // A pending answer would land in the emptied chat.
+    if (chatLoading || !$selectedProject) return;
+    // Nothing is saved yet, so there is nothing to delete or confirm.
+    if (!conversationId) {
+      chatMessages = [];
+      chatError = '';
+      return;
+    }
     showClearConfirmDialog = true;
   };
 
@@ -224,12 +239,13 @@
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
-      showClearConfirmDialog = false;
     } catch (error) {
       console.error('Failed to clear conversation:', error);
       chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
     } finally {
       clearLoading = false;
+      // Closing on failure too, so the error banner is not hidden behind the backdrop.
+      showClearConfirmDialog = false;
     }
   };
 
@@ -281,9 +297,9 @@
         });
 
         // Add a temporary highlight effect
-        citationElement.classList.add('bg-primary/20', 'ring-2', 'ring-primary/50');
+        citationElement.classList.add('citation-highlight');
         setTimeout(() => {
-          citationElement.classList.remove('bg-primary/20', 'ring-2', 'ring-primary/50');
+          citationElement.classList.remove('citation-highlight');
         }, 2000);
       }
     }, 100);
@@ -320,6 +336,20 @@
     {/if}
 
     <div class="ml-auto flex items-center gap-1">
+      {#if $selectedProject && hasMessages && !loadingHistory}
+        <!-- The tooltip sits on a wrapper so it still shows while the button is disabled. -->
+        <div class="tooltip tooltip-bottom" data-tip="New chat">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-square"
+            aria-label="New chat"
+            onclick={handleClearConversation}
+            disabled={chatLoading}
+          >
+            <SquarePen class="w-5 h-5 text-base-content/70" aria-hidden="true" />
+          </button>
+        </div>
+      {/if}
       {#if $selectedProject && !rightSidebarOpen}
         <button
           type="button"
@@ -603,21 +633,10 @@
                 </div>
               </div>
 
-              <div class="mt-2 flex min-h-6 items-center justify-between gap-2 px-1">
+              <div class="mt-2 flex min-h-6 items-center px-1">
                 <span class="text-xs text-base-content/50">
                   Enter to send, Shift+Enter for a new line
                 </span>
-                {#if hasMessages}
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs gap-1 text-base-content/60"
-                    onclick={handleClearConversation}
-                    title="Clear conversation"
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                    Clear
-                  </button>
-                {/if}
               </div>
 
               {#if !hasMessages}
@@ -632,12 +651,11 @@
   </div>
 </div>
 
-<!-- Clear Conversation Confirmation Dialog -->
 <ConfirmationDialog
   bind:isOpen={showClearConfirmDialog}
-  title="Clear Conversation"
-  message="Are you sure you want to clear this conversation? This action cannot be undone."
-  confirmText="Clear"
+  title="Start a new chat?"
+  message="This deletes the current conversation. This cannot be undone."
+  confirmText="Start new chat"
   cancelText="Cancel"
   confirmClass="btn-error"
   icon="danger"
@@ -649,8 +667,8 @@
 <style>
   /* Citation highlight effect for clicked citations */
   :global(.citation-highlight) {
-    background-color: rgba(var(--p) / 0.2);
-    box-shadow: 0 0 0 2px rgba(var(--p) / 0.5);
+    background-color: color-mix(in oklab, var(--color-primary) 20%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 50%, transparent);
     border-radius: 0.375rem;
     padding: 0.25rem;
     margin: -0.25rem;
