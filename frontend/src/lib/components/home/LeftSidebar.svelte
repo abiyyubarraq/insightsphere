@@ -1,7 +1,6 @@
 <script lang="ts">
   import {
     Plus,
-    Search,
     Library,
     ChevronDown,
     ChevronUp,
@@ -62,16 +61,6 @@
         >
           <Plus class="w-4 h-4" />
           New Project
-        </button>
-
-        <button
-          class="btn btn-ghost w-full justify-start gap-3 {activeNavItem === 'search-project'
-            ? 'btn-active'
-            : ''}"
-          onclick={() => onNavClick('search-project')}
-        >
-          <Search class="w-4 h-4" />
-          Search Project
         </button>
 
         <button
