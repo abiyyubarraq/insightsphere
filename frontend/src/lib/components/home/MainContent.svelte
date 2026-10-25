@@ -218,16 +218,26 @@
     textareaEl?.focus();
   };
 
-  const handleClearConversation = () => {
+  const handleClearConversation = async () => {
     // A pending answer would land in the emptied chat.
-    if (chatLoading || !$selectedProject) return;
-    // Nothing is saved yet, so there is nothing to delete or confirm.
-    if (!conversationId) {
-      chatMessages = [];
-      chatError = '';
+    if (chatLoading || clearLoading || !$selectedProject) return;
+    if (conversationId) {
+      showClearConfirmDialog = true;
       return;
     }
-    showClearConfirmDialog = true;
+    // No id yet, but a Stopped or failed send may have saved the question already.
+    // Delete it without a dialog, or the next send would bring it back.
+    try {
+      clearLoading = true;
+      await deleteConversationHistory($selectedProject.id);
+      chatMessages = [];
+      chatError = '';
+    } catch (error) {
+      console.error('Failed to clear conversation:', error);
+      chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
+    } finally {
+      clearLoading = false;
+    }
   };
 
   const confirmClearConversation = async () => {
@@ -344,7 +354,7 @@
             class="btn btn-ghost btn-sm btn-square"
             aria-label="New chat"
             onclick={handleClearConversation}
-            disabled={chatLoading}
+            disabled={chatLoading || clearLoading}
           >
             <SquarePen class="w-5 h-5 text-base-content/70" aria-hidden="true" />
           </button>
