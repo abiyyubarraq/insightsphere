@@ -64,6 +64,8 @@ cd insightsphere
 cp dev/.env.example dev/.env     # fill in Supabase + OpenAI
 ```
 
+To let users save their own OpenAI key, also set `KEY_ENCRYPTION_SECRET` in `dev/.env` to the output of `openssl rand -base64 32`. It is optional: without it the settings routes answer 503 and everything else works. Keep it safe — losing or changing it makes every saved key unreadable, and users have to save theirs again.
+
 Apply the schema: in the Supabase SQL editor run the files in `supabase/migrations/` in order. They create the six tables, switch on row level security for all of them, and add the policies.
 
 ```bash
@@ -96,6 +98,9 @@ Every endpoint needs `Authorization: Bearer <supabase-jwt>`. There is no other w
 | `DELETE` | `/v1/projects/:projectId` | Drops the collection and everything under it |
 | `POST` | `/v1/search/query` | Raw chunk search, no generation |
 | `POST` | `/v1/searchFiles` | File library, by filename or semantic |
+| `GET` | `/v1/settings/api-key` | Whether the user saved their own OpenAI key, with a hint like `sk-…abcd` |
+| `PUT` | `/v1/settings/api-key` | Check a key with one embedding call, then save it encrypted (AES-256-GCM) |
+| `DELETE` | `/v1/settings/api-key` | Remove the saved key |
 | `GET` | `/health` | Liveness |
 
 ```bash

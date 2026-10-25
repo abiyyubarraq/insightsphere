@@ -30,7 +30,8 @@ local data volumes.
 | Ran `npm run build` or `npm run check` | **restart the frontend** — see below |
 
 `restart` does not re-read the env file, which is the one that catches people
-out. The API deliberately does not run under `deno --watch`: OCR holds large
+out — for example after adding `KEY_ENCRYPTION_SECRET` (optional, make it with
+`openssl rand -base64 32`; without it users cannot save their own OpenAI key). The API deliberately does not run under `deno --watch`: OCR holds large
 buffers and the watcher pushed the container into swap.
 
 **Running `npm run build` or `npm run check` while the dev server is up breaks

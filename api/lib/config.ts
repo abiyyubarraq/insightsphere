@@ -1,3 +1,5 @@
+import { secretBytes } from "./keyCrypto.ts";
+
 /**
  * Environment validation.
  *
@@ -35,6 +37,17 @@ export function assertEnv(): void {
   if (defaulted.length > 0) {
     console.log(
       `Using defaults for: ${defaulted.map(([k, v]) => `${k}=${v}`).join(", ")}`,
+    );
+  }
+
+  // Optional and has no default, so it is not in OPTIONAL. Without it the
+  // settings routes answer 503 and everything else works.
+  const keySecret = Deno.env.get("KEY_ENCRYPTION_SECRET")?.trim();
+  if (!keySecret) {
+    console.log("KEY_ENCRYPTION_SECRET not set: own API keys disabled");
+  } else if (!secretBytes(keySecret)) {
+    console.warn(
+      "KEY_ENCRYPTION_SECRET is not base64 for 32 bytes: own API keys disabled",
     );
   }
 }
