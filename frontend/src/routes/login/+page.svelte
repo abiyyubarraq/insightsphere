@@ -50,9 +50,6 @@
 
     try {
       await signInWithGoogle();
-
-      // Redirect to dashboard or home page
-      goto('/');
     } catch {
       error = AUTH_ERROR_MESSAGES.unknown;
     } finally {
