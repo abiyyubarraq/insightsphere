@@ -23,6 +23,7 @@
   import ChatMarkdown from './ChatMarkdown.svelte';
   import { canSend, shouldSubmitOnKey } from '$lib/chatComposer';
   import { applyOlderPage } from '$lib/chatHistory';
+  import { isStillCurrent } from '$lib/staleResponse';
 
   let {
     leftSidebarOpen = $bindable(),
@@ -151,25 +152,35 @@
       conversationId = undefined;
       chatError = '';
       loadedProjectId = undefined;
+      loadingHistory = false;
     }
   });
 
   const loadConversationHistory = async () => {
     if (!$selectedProject || !$user) return;
 
+    const projectId = $selectedProject.id;
+    const currentHistoryRequest = () => ({
+      projectId: $selectedProject?.id,
+      generation: loadGeneration,
+    });
+    const requestedFor = currentHistoryRequest();
     try {
       loadingHistory = true;
       chatError = '';
-      const response = await getConversationHistory($selectedProject.id);
+      const response = await getConversationHistory(projectId);
+      if (!isStillCurrent(requestedFor, currentHistoryRequest())) return;
       chatMessages = response.messages || [];
       hasMore = response.has_more;
       conversationId = response.conversation?.id;
-      loadedProjectId = $selectedProject.id; // Mark this project as loaded
+      loadedProjectId = projectId; // Mark this project as loaded
     } catch (error) {
+      if (!isStillCurrent(requestedFor, currentHistoryRequest())) return;
       console.error('Failed to load conversation history:', error);
       chatError = error instanceof Error ? error.message : 'Failed to load conversation history';
     } finally {
-      loadingHistory = false;
+      // After a project change, the newer request owns the flag.
+      if (isStillCurrent(requestedFor, currentHistoryRequest())) loadingHistory = false;
     }
   };
 
@@ -309,8 +320,8 @@
 
     try {
       clearLoading = true;
-      resetPaging();
       await deleteConversationHistory($selectedProject.id);
+      resetPaging();
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
