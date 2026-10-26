@@ -66,6 +66,8 @@ cp dev/.env.example dev/.env     # fill in Supabase + OpenAI
 
 To let users save their own OpenAI key, also set `KEY_ENCRYPTION_SECRET` in `dev/.env` to the output of `openssl rand -base64 32`. It is optional: without it the settings routes answer 503 and everything else works. Keep it safe — losing or changing it makes every saved key unreadable, and users have to save theirs again.
 
+A user with a saved key has every OpenAI call made for them (chat, query, document processing, summaries, search) sent with that key, and the daily quotas do not apply to them. The 20 requests a minute burst limit still does. If their key fails, the request fails with a message for them (400 for a rejected key, 429 when their OpenAI account has no credit); the server key is never used instead.
+
 Apply the schema: in the Supabase SQL editor run the files in `supabase/migrations/` in order. They create the six tables, switch on row level security for all of them, and add the policies.
 
 ```bash

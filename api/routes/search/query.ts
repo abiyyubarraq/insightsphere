@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { qdrantService } from "../../lib/qdrantClient.ts";
-import { openaiClient } from "../../lib/openaiClient.ts";
+import { keyFailureResponse } from "../../lib/openaiErrors.ts";
+import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
@@ -58,15 +59,18 @@ export async function searchDocuments(c: Context) {
     // different provider would change the dimensionality and silently return
     // nothing, so failure is surfaced instead.
     const embeddingModel = "text-embedding-3-small";
+    const openai = await openAIForUser(user.id);
     let queryEmbedding: number[];
     try {
-      const embedding = await openaiClient.generateEmbedding({
+      const embedding = await openai.client.generateEmbedding({
         text: query,
         model: embeddingModel,
       });
       queryEmbedding = embedding.embedding;
     } catch (error) {
       console.error("Query embedding failed:", error);
+      const keyFailure = keyFailureResponse(c, openai.own, error);
+      if (keyFailure) return keyFailure;
       return c.json({
         error: "Could not process the query",
         details: error instanceof Error ? error.message : "Unknown error",

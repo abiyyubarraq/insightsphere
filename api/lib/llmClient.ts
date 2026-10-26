@@ -2,7 +2,10 @@
  * LLM Client for RAG Query Processing
  */
 
-import { type ChatCompletionRequest, openaiClient } from "./openaiClient.ts";
+import type { ChatCompletionRequest, OpenAIClient } from "./openaiClient.ts";
+import { OpenAIRequestError } from "./openaiErrors.ts";
+
+export type ChatCompleter = Pick<OpenAIClient, "generateChatCompletion">;
 
 export interface LLMResponse {
   answer: string;
@@ -34,9 +37,11 @@ export interface LLMClient {
  * OpenAI LLM Client
  */
 export class OpenAILLMClient implements LLMClient {
+  private readonly client: ChatCompleter;
   private readonly model: string;
 
-  constructor(model = "gpt-4o-mini") {
+  constructor(client: ChatCompleter, model = "gpt-4o-mini") {
+    this.client = client;
     this.model = model;
   }
 
@@ -133,7 +138,7 @@ export class OpenAILLMClient implements LLMClient {
         temperature: 0.1,
         top_p: 0.95,
       };
-      const result = await openaiClient.generateChatCompletion(request);
+      const result = await this.client.generateChatCompletion(request);
       console.log(`✅ LLM Response received from ${this.model}`);
 
       return {
@@ -142,6 +147,8 @@ export class OpenAILLMClient implements LLMClient {
         model: result.model,
       };
     } catch (error) {
+      // Kept whole so a route can still tell a rejected key from an outage.
+      if (error instanceof OpenAIRequestError) throw error;
       console.error("OpenAI LLM generation failed:", error);
       throw new Error(
         `Failed to generate OpenAI response: ${
@@ -153,18 +160,11 @@ export class OpenAILLMClient implements LLMClient {
 }
 
 export class LLMClientFactory {
-  static create(): LLMClient {
-    if (!Deno.env.get("OPENAI_API_KEY")) {
-      throw new Error("No LLM API key found. Set OPENAI_API_KEY");
-    }
-    console.log("🤖 Using OpenAI LLM client");
-    return new OpenAILLMClient();
+  static create(client: ChatCompleter): LLMClient {
+    return new OpenAILLMClient(client);
   }
 
-  static createOpenAI(model?: string): LLMClient {
-    return new OpenAILLMClient(model);
+  static createOpenAI(client: ChatCompleter, model?: string): LLMClient {
+    return new OpenAILLMClient(client, model);
   }
 }
-
-// Export singleton instance
-export const llmClient = LLMClientFactory.create();

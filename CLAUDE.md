@@ -67,6 +67,7 @@ new code — import it.
 | Storage bucket | `SUPABASE_STORAGE_BUCKET`, default `anotherbrainfileplayground` | `api/lib/config.ts` |
 | Storage path | `{userId}/{projectId}/{timestamp}_{filename}` | `frontend/src/services/supabase.ts` |
 | Daily quotas | per tier in the `quota_tiers` table, not in code; no `user_tiers` row = `basic` | `supabase/migrations/0006_quota.sql` |
+| Own key and quotas | a user with a saved key skips all four daily quotas; the burst limit still applies | `api/lib/quotaGate.ts` |
 | Burst limit | 20 requests/minute per user on chat, query, process, summary, saving an own key | `api/main.ts` |
 | Own key shape | starts `sk-`, 20 to 300 chars, only `[A-Za-z0-9_-]` | `api/lib/openaiKeyCheck.ts` |
 | Own key check call | one embedding, 10 s timeout, no retries | `api/routes/settings/apiKey.ts` |
@@ -107,6 +108,14 @@ limit, with a sentence meant for the user in `error`. Process answers **409**
 for a document already processing; summary answers **409** when one exists,
 unless the body has `regenerate: true`. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
+
+For a user with their own key, every OpenAI call uses that key (`openAIForUser`,
+one client per request) and never falls back to the server key. When it fails,
+chat, query, summary, `/v1/search/query` and semantic `/v1/searchFiles` answer
+**400** "Your OpenAI key was rejected. Update it in Settings." (or a 400 when
+the key cannot use the model), and **429** when their OpenAI account has no
+credit. Processing runs in the background, so it writes the same sentence to
+`processing_error` instead. The sentences are in `api/lib/openaiErrors.ts`.
 
 The settings routes answer **503** `"Own API keys are not enabled on this
 server."` when `KEY_ENCRYPTION_SECRET` is not set. It is optional, 32 bytes of

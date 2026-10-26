@@ -19,11 +19,13 @@ import { ChatService } from "../../lib/chatService.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
 import {
-  consumeQuota,
+  chargeUserQuota,
   quotaExceeded,
   QuotaUnavailableError,
   quotaUnavailable,
 } from "../../lib/quotaService.ts";
+import { keyFailureResponse } from "../../lib/openaiErrors.ts";
+import { openAIForUser } from "../../lib/userOpenAI.ts";
 import type { HistoryTurn } from "../../lib/queryRewrite.ts";
 import type {
   SendMessageRequest,
@@ -31,6 +33,7 @@ import type {
 } from "../../../shared/types/chat.ts";
 
 export async function sendChatMessage(c: Context) {
+  let own = false;
   try {
     const startTime = Date.now();
     const user = currentUser(c);
@@ -74,9 +77,13 @@ export async function sendChatMessage(c: Context) {
       }, 403);
     }
 
+    // One client for the rewrite, the embedding and the answer.
+    const openai = await openAIForUser(user.id);
+    own = openai.own;
+
     // Charged before anything is saved or sent to OpenAI. Not refunded if the
     // answer later fails.
-    const quota = await consumeQuota(user.id, "chat");
+    const quota = await chargeUserQuota({ own, userId: user.id, kind: "chat" });
     if (!quota.allowed) return quotaExceeded(c, "chat", quota.limit);
 
     // Initialize chat service
@@ -146,6 +153,7 @@ export async function sendChatMessage(c: Context) {
       projectId,
       user.id,
       message,
+      openai,
       ragOptions,
     );
 
@@ -197,6 +205,8 @@ export async function sendChatMessage(c: Context) {
       return quotaUnavailable(c);
     }
     console.error("Chat message endpoint failed:", error);
+    const keyFailure = keyFailureResponse(c, own, error);
+    if (keyFailure) return keyFailure;
 
     return c.json({
       success: false,
