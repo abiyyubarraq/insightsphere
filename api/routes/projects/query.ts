@@ -171,7 +171,8 @@ const suggestionCache = createSuggestionCache();
  * GET /v1/projects/:projectId/query/suggestions
  *
  * Takes no daily quota, only the burst limit: the cache makes it about one
- * cheap call per document change.
+ * cheap call per document change, and a project gets at most one model call
+ * per SUGGESTION_MIN_INTERVAL_MS however its rows change.
  */
 export async function getQuerySuggestions(c: Context) {
   try {
@@ -214,6 +215,9 @@ export async function getQuerySuggestions(c: Context) {
         return result.answer;
       },
       suggestionCache,
+      {
+        loadSummaries: (ids) => supabaseService.getDocumentSummaries(projectId, ids),
+      },
     );
 
     console.log("Query suggestions:", {

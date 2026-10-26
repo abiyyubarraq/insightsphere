@@ -9,7 +9,8 @@
 export interface SuggestionDoc {
   id: string;
   file_name: string;
-  summary: string | null;
+  /** Left out of the list that builds the cache key; see LoadSummaries. */
+  summary?: string | null;
   is_summary_exist: boolean;
   updated_at: string | null;
 }
@@ -23,6 +24,9 @@ export type CompleteSuggestions = (
   messages: SuggestionMessage[],
   signal: AbortSignal,
 ) => Promise<string>;
+
+/** Summary text by document id, for the ids asked for. Called only before a model call. */
+export type LoadSummaries = (ids: string[]) => Promise<Map<string, string | null>>;
 
 export type SuggestionSource = "generated" | "fallback" | "empty";
 
@@ -44,6 +48,12 @@ export const SUGGESTION_NAME_CHARS = 120;
 export const SUGGESTION_SUMMARY_CHARS = 400;
 export const SUGGESTION_PROMPT_CHARS = 6000;
 export const SUGGESTION_CACHE_PROJECTS = 500;
+/**
+ * Least time between two model calls for one project. The cache key can be
+ * changed by the user's own edits to a document row, so the key alone does not
+ * cap the spend.
+ */
+export const SUGGESTION_MIN_INTERVAL_MS = 30_000;
 
 /** The first four of the fixed list this endpoint used to return. */
 export const FALLBACK_SUGGESTIONS: readonly string[] = [
@@ -134,10 +144,21 @@ export interface SuggestionCache {
   max: number;
   done: Map<string, { key: string; suggestions: string[] }>;
   pending: Map<string, { key: string; result: Promise<SuggestionResult> }>;
+  /** When the last model call for each project started, success or not. */
+  lastCall: Map<string, number>;
 }
 
 export function createSuggestionCache(max = SUGGESTION_CACHE_PROJECTS): SuggestionCache {
-  return { max, done: new Map(), pending: new Map() };
+  return { max, done: new Map(), pending: new Map(), lastCall: new Map() };
+}
+
+function markCall(cache: SuggestionCache, projectId: string, at: number) {
+  cache.lastCall.delete(projectId);
+  cache.lastCall.set(projectId, at);
+  if (cache.lastCall.size > cache.max) {
+    const oldest = cache.lastCall.keys().next().value;
+    if (oldest !== undefined) cache.lastCall.delete(oldest);
+  }
 }
 
 function remember(
@@ -160,11 +181,31 @@ const fallback = (): SuggestionResult => ({
   source: "fallback",
 });
 
+async function withSummaries(
+  docs: SuggestionDoc[],
+  loadSummaries: LoadSummaries | undefined,
+): Promise<SuggestionDoc[]> {
+  const newest = docs.slice(0, SUGGESTION_MAX_DOCS);
+  const ids = newest.filter((doc) => doc.is_summary_exist).map((doc) => doc.id);
+  if (!loadSummaries || ids.length === 0) return newest;
+  const summaries = await loadSummaries(ids);
+  return newest.map((doc) => ({ ...doc, summary: summaries.get(doc.id) ?? null }));
+}
+
 async function generate(
   docs: SuggestionDoc[],
   complete: CompleteSuggestions,
   timeoutMs: number,
+  loadSummaries: LoadSummaries | undefined,
 ): Promise<SuggestionResult> {
+  let withText: SuggestionDoc[];
+  try {
+    withText = await withSummaries(docs, loadSummaries);
+  } catch {
+    console.warn("Suggestions fell back: summaries could not be read");
+    return fallback();
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`suggestions exceeded ${timeoutMs}ms`)),
@@ -182,7 +223,7 @@ async function generate(
 
   try {
     const raw = await Promise.race([
-      complete(buildSuggestionMessages(docs), controller.signal),
+      complete(buildSuggestionMessages(withText), controller.signal),
       deadline,
     ]);
     const suggestions = parseSuggestions(raw);
@@ -203,15 +244,25 @@ async function generate(
 }
 
 /**
- * A fallback is never cached, so a passing failure is retried on the next
- * call. Two calls for the same project and documents share one model call.
+ * A fallback is never cached. Two calls for the same project and documents
+ * share one model call. A cache miss within minIntervalMs of the last model
+ * call for the project makes no call: it returns the last generated list, or
+ * the fallback list when there is none.
+ *
+ * `docs` is every ready document, newest first, without summary text.
+ * loadSummaries is called for the newest ones, and only right before a model call.
  */
 export function getSuggestions(
   projectId: string,
   docs: SuggestionDoc[],
   complete: CompleteSuggestions,
   cache: SuggestionCache,
-  options: { timeoutMs?: number } = {},
+  options: {
+    timeoutMs?: number;
+    loadSummaries?: LoadSummaries;
+    now?: () => number;
+    minIntervalMs?: number;
+  } = {},
 ): Promise<SuggestionResult> {
   if (docs.length === 0) return Promise.resolve({ suggestions: [], source: "empty" });
 
@@ -223,7 +274,23 @@ export function getSuggestions(
   const running = cache.pending.get(projectId);
   if (running?.key === key) return running.result;
 
-  const result = generate(docs, complete, options.timeoutMs ?? SUGGESTION_TIMEOUT_MS)
+  const now = (options.now ?? Date.now)();
+  const lastCall = cache.lastCall.get(projectId);
+  if (lastCall !== undefined && now - lastCall < (options.minIntervalMs ?? SUGGESTION_MIN_INTERVAL_MS)) {
+    return Promise.resolve(
+      hit
+        ? { suggestions: [...hit.suggestions], source: "generated" }
+        : fallback(),
+    );
+  }
+  markCall(cache, projectId, now);
+
+  const result = generate(
+    docs,
+    complete,
+    options.timeoutMs ?? SUGGESTION_TIMEOUT_MS,
+    options.loadSummaries,
+  )
     .then((outcome) => {
       if (outcome.source === "generated") {
         remember(cache, projectId, key, outcome.suggestions);

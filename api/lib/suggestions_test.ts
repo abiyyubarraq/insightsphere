@@ -5,9 +5,11 @@ import {
   createSuggestionCache,
   FALLBACK_SUGGESTIONS,
   getSuggestions,
+  type LoadSummaries,
   parseSuggestions,
   SUGGESTION_MAX_CHARS,
   SUGGESTION_MAX_DOCS,
+  SUGGESTION_MIN_INTERVAL_MS,
   SUGGESTION_PROMPT_CHARS,
   SUGGESTION_SUMMARY_CHARS,
   type SuggestionDoc,
@@ -33,6 +35,12 @@ const spy = (answer: string) => {
     return Promise.resolve(answer);
   };
   return { complete, calls };
+};
+
+/** A clock the test moves by hand, so the interval needs no real waiting. */
+const clock = () => {
+  let t = 1_000_000;
+  return { now: () => t, advance: (ms: number) => { t += ms; } };
 };
 
 // The model answers with a plain array most of the time; this is the happy path.
@@ -171,9 +179,11 @@ Deno.test("a new ready document, a new summary or a regenerated summary misses t
 
   for (const docs of changed) {
     const cache = createSuggestionCache();
+    const time = clock();
     const { complete, calls } = spy(JSON.stringify(four));
-    await getSuggestions("p1", base, complete, cache);
-    await getSuggestions("p1", docs, complete, cache);
+    await getSuggestions("p1", base, complete, cache, { now: time.now });
+    time.advance(SUGGESTION_MIN_INTERVAL_MS);
+    await getSuggestions("p1", docs, complete, cache, { now: time.now });
     assertEquals(calls.length, 2);
     assert(suggestionsCacheKey(base) !== suggestionsCacheKey(docs));
   }
@@ -182,14 +192,16 @@ Deno.test("a new ready document, a new summary or a regenerated summary misses t
 // A short outage must not pin the generic list on a project until the next deploy.
 Deno.test("a fallback is not cached", async () => {
   const cache = createSuggestionCache();
+  const time = clock();
   let calls = 0;
   const complete: CompleteSuggestions = () => {
     calls += 1;
     return calls === 1 ? Promise.reject(new Error("503")) : Promise.resolve(JSON.stringify(four));
   };
 
-  const first = await getSuggestions("p1", [doc("a")], complete, cache);
-  const second = await getSuggestions("p1", [doc("a")], complete, cache);
+  const first = await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  time.advance(SUGGESTION_MIN_INTERVAL_MS);
+  const second = await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
 
   assertEquals(first.source, "fallback");
   assertEquals(second.source, "generated");
@@ -224,4 +236,168 @@ Deno.test("the cache keeps at most its size in projects, dropping the oldest", a
 
   await getSuggestions("p3", [doc("a")], complete, cache);
   assertEquals(calls.length, 3);
+});
+
+// The user can change updated_at on their own rows, so the key alone does not
+// stop a loop of model calls on the server key.
+Deno.test("two cache misses within the interval make one model call", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete, calls } = spy(JSON.stringify(four));
+
+  const first = await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  time.advance(SUGGESTION_MIN_INTERVAL_MS - 1);
+  const second = await getSuggestions(
+    "p1",
+    [doc("a", { updated_at: "2026-10-02T00:00:00Z" })],
+    complete,
+    cache,
+    { now: time.now },
+  );
+
+  assertEquals(calls.length, 1);
+  assertEquals(first, { suggestions: four, source: "generated" });
+  assertEquals(second, { suggestions: four, source: "generated" });
+});
+
+Deno.test("a cache miss after the interval calls the model again", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete, calls } = spy(JSON.stringify(four));
+
+  await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  time.advance(SUGGESTION_MIN_INTERVAL_MS);
+  await getSuggestions("p1", [doc("a"), doc("b")], complete, cache, { now: time.now });
+
+  assertEquals(calls.length, 2);
+});
+
+// A miss inside the interval must not store the old list under the new key,
+// or the next call after the interval would never refresh it.
+Deno.test("a miss inside the interval is not stored under the new key", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete, calls } = spy(JSON.stringify(four));
+  const edited = [doc("a", { updated_at: "2026-10-02T00:00:00Z" })];
+
+  await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  await getSuggestions("p1", edited, complete, cache, { now: time.now });
+  time.advance(SUGGESTION_MIN_INTERVAL_MS);
+  await getSuggestions("p1", edited, complete, cache, { now: time.now });
+
+  assertEquals(calls.length, 2);
+});
+
+// A failed call costs money too, so it starts the interval as well.
+Deno.test("a failed model call also starts the interval", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  let calls = 0;
+  const complete: CompleteSuggestions = () => {
+    calls += 1;
+    return Promise.reject(new Error("503"));
+  };
+
+  const first = await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  const second = await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  time.advance(SUGGESTION_MIN_INTERVAL_MS);
+  await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+
+  assertEquals(first.source, "fallback");
+  assertEquals(second, { suggestions: [...FALLBACK_SUGGESTIONS], source: "fallback" });
+  assertEquals(calls, 2);
+});
+
+Deno.test("output that does not parse also starts the interval", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete, calls } = spy("not json");
+
+  await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  await getSuggestions("p1", [doc("b")], complete, cache, { now: time.now });
+
+  assertEquals(calls.length, 1);
+});
+
+Deno.test("the interval is kept per project", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete, calls } = spy(JSON.stringify(four));
+
+  await getSuggestions("p1", [doc("a")], complete, cache, { now: time.now });
+  await getSuggestions("p2", [doc("a")], complete, cache, { now: time.now });
+
+  assertEquals(calls.length, 2);
+});
+
+Deno.test("the interval map keeps at most the cache size in projects", async () => {
+  const cache = createSuggestionCache(2);
+  const time = clock();
+  const { complete } = spy(JSON.stringify(four));
+
+  for (const projectId of ["p1", "p2", "p3"]) {
+    await getSuggestions(projectId, [doc("a")], complete, cache, { now: time.now });
+  }
+
+  assertEquals(cache.lastCall.size, 2);
+});
+
+// The key needs no summary text, and a cache hit must not read any.
+Deno.test("summaries are read only for a model call, for the newest flagged documents", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete, calls } = spy(JSON.stringify(four));
+  const asked: string[][] = [];
+  const loadSummaries: LoadSummaries = (ids) => {
+    asked.push(ids);
+    return Promise.resolve(new Map(ids.map((id) => [id, `text of ${id}`])));
+  };
+  const docs = Array.from({ length: SUGGESTION_MAX_DOCS + 3 }, (_, i) =>
+    doc(`d${i}`, { is_summary_exist: i !== 1 }));
+
+  await getSuggestions("p1", docs, complete, cache, { now: time.now, loadSummaries });
+  await getSuggestions("p1", docs, complete, cache, { now: time.now, loadSummaries });
+
+  assertEquals(calls.length, 1);
+  assertEquals(asked.length, 1);
+  assertEquals(asked[0].length, SUGGESTION_MAX_DOCS - 1);
+  assertFalse(asked[0].includes("d1"));
+  assertFalse(asked[0].includes(`d${SUGGESTION_MAX_DOCS}`));
+  const user = (calls[0] as { content: string }[])[1].content;
+  assert(user.includes("text of d0"));
+});
+
+Deno.test("a miss inside the interval reads no summaries", async () => {
+  const cache = createSuggestionCache();
+  const time = clock();
+  const { complete } = spy(JSON.stringify(four));
+  let reads = 0;
+  const loadSummaries: LoadSummaries = () => {
+    reads += 1;
+    return Promise.resolve(new Map());
+  };
+  const flagged = (updated_at: string) => [doc("a", { is_summary_exist: true, updated_at })];
+
+  await getSuggestions("p1", flagged("1"), complete, cache, { now: time.now, loadSummaries });
+  await getSuggestions("p1", flagged("2"), complete, cache, { now: time.now, loadSummaries });
+
+  assertEquals(reads, 1);
+});
+
+// A database error while reading summaries must not break the empty chat.
+Deno.test("a failed summary read gives the fallback and makes no model call", async () => {
+  const cache = createSuggestionCache();
+  const { complete, calls } = spy(JSON.stringify(four));
+  const loadSummaries: LoadSummaries = () => Promise.reject(new Error("db down"));
+
+  const out = await getSuggestions(
+    "p1",
+    [doc("a", { is_summary_exist: true })],
+    complete,
+    cache,
+    { loadSummaries },
+  );
+
+  assertEquals(out.source, "fallback");
+  assertEquals(calls.length, 0);
 });
