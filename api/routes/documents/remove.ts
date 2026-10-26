@@ -10,6 +10,7 @@ import type { Context } from "hono";
 import { currentUser } from "../../lib/auth.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { qdrantService } from "../../lib/qdrantClient.ts";
+import { deleteFilesAndRow } from "../../lib/documentDelete.ts";
 
 export async function deleteDocument(c: Context) {
   const documentId = c.req.param("documentId");
@@ -46,16 +47,20 @@ export async function deleteDocument(c: Context) {
     console.error(`Failed to delete vectors for ${documentId}:`, error);
   }
 
-  const paths = [
-    document.storage_path,
-    ...await supabaseService.listStorageFiles(
-      `${user.id}/${document.project_id}/images/${documentId}`,
-    ),
-  ].filter(Boolean);
-  removed.storageObjects = await supabaseService.deleteStorageFiles(paths);
-
-  // Cascades to document_pages and chat_citations.
-  await supabaseService.deleteDocumentRow(documentId, user.id);
+  try {
+    removed.storageObjects = await deleteFilesAndRow(document.storage_path, {
+      listImages: () =>
+        supabaseService.listStorageFiles(
+          `${user.id}/${document.project_id}/images/${documentId}`,
+        ),
+      deleteFiles: (paths) => supabaseService.deleteStorageFiles(paths),
+      // Cascades to document_pages and chat_citations.
+      deleteRow: () => supabaseService.deleteDocumentRow(documentId, user.id),
+    });
+  } catch (error) {
+    console.error(`Could not delete document ${documentId}:`, error);
+    return c.json({ success: false, error: "Could not delete the document" }, 500);
+  }
 
   console.log(
     `Deleted document ${documentId}: vectors=${removed.vectors} objects=${removed.storageObjects}`,

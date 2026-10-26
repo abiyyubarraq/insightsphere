@@ -1,3 +1,5 @@
+import { isUuid } from "./conversationAccess.ts";
+
 export interface DocumentOwner {
   user_id: string;
   project_id: string;
@@ -15,6 +17,15 @@ export function documentInProject(
   return document.user_id === userId && document.project_id === projectId
     ? "allowed"
     : "not_found";
+}
+
+/**
+ * A project id that is not a UUID would reach Postgres as 22P02, which the
+ * project access check reads as "denied". It is a project that cannot exist,
+ * so it gets the not-found answer instead.
+ */
+export function projectIdShape(projectId: unknown): "valid" | "not_found" {
+  return isUuid(projectId) ? "valid" : "not_found";
 }
 
 export interface DocumentLookup<T> {

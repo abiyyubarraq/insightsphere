@@ -107,7 +107,8 @@ Chat, query, process and summary answer **429** at a daily quota or the burst
 limit, with a sentence meant for the user in `error`; suggestions and search
 only at the burst limit. Process answers **409**
 for a document already processing; summary answers **409** when one exists,
-unless the body has `regenerate: true`. A **503** means the quota or Supabase
+unless the body has `regenerate: true`. Process and summary answer **404** for a
+`project_id` that is not a UUID, and so does deleting a project by one. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
 
 Process, summary and `DELETE /v1/documents/:documentId` answer **404**
