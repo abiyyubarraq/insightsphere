@@ -5,11 +5,11 @@
  *
  * Handles:
  * 1. Creating/retrieving conversation
- * 2. Saving user message
- * 3. Retrieving relevant document chunks with RAG
- * 4. Including conversation history for context-aware responses
- * 5. Generating AI response with citations
- * 6. Saving assistant message and citations
+ * 2. Retrieving relevant document chunks with RAG
+ * 3. Including conversation history for context-aware responses
+ * 4. Generating AI response with citations
+ * 5. Saving the user message and the assistant message with citations, only
+ *    once the answer exists
  */
 
 import { type Context } from "hono";
@@ -27,6 +27,7 @@ import {
 import { keyFailureResponse } from "../../lib/openaiErrors.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
 import type { HistoryTurn } from "../../lib/queryRewrite.ts";
+import { answerThenSave } from "../../lib/chatExchange.ts";
 import type {
   SendMessageRequest,
   SendMessageResponse,
@@ -131,14 +132,6 @@ export async function sendChatMessage(c: Context) {
       }
     }
 
-    // Save user message
-    const userMessage = await chatService.saveUserMessage(
-      conversationId,
-      message,
-    );
-
-    console.log(`👤 User message saved: ${userMessage.id}`);
-
     // Execute RAG query with conversation context
     const ragOptions = {
       max_chunks: options.max_chunks ?? 5,
@@ -149,25 +142,19 @@ export async function sendChatMessage(c: Context) {
       conversation_turns: conversationTurns, // Used to rewrite the query before retrieval
     };
 
-    const ragResult = await ragService.queryProject(
-      projectId,
-      user.id,
-      message,
-      openai,
-      ragOptions,
-    );
+    const { answer: ragResult, userMessage, assistantMessage } = await answerThenSave({
+      answer: () =>
+        ragService.queryProject(projectId, user.id, message, openai, ragOptions),
+      saveUser: () => chatService.saveUserMessage(conversationId, message),
+      saveAssistant: (result) =>
+        chatService.saveAssistantMessage(conversationId, result.answer, result),
+      deleteMessage: (saved) => chatService.deleteMessage(saved.id),
+    });
 
     console.log(
       `🤖 RAG query completed - ${ragResult.citations.length} citations`,
     );
-
-    // Save assistant message with citations
-    const assistantMessage = await chatService.saveAssistantMessage(
-      conversationId,
-      ragResult.answer,
-      ragResult,
-    );
-
+    console.log(`👤 User message saved: ${userMessage.id}`);
     console.log(`🤖 Assistant message saved: ${assistantMessage.id}`);
 
     // Fetch citations for response

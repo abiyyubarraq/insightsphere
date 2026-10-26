@@ -42,10 +42,33 @@
   }
 
   /* Lists */
+  /* Tailwind's preflight removes list markers, so they are set again here. */
   .summary-markdown :global(ul),
   .summary-markdown :global(ol) {
     margin: 0.5rem 0;
     padding-left: 1.5rem;
+    list-style-position: outside;
+  }
+
+  .summary-markdown :global(ul) {
+    list-style-type: disc;
+  }
+
+  .summary-markdown :global(ol) {
+    list-style-type: decimal;
+  }
+
+  .summary-markdown :global(li ul) {
+    list-style-type: circle;
+  }
+
+  .summary-markdown :global(li ol) {
+    list-style-type: lower-alpha;
+  }
+
+  .summary-markdown :global(li > ul),
+  .summary-markdown :global(li > ol) {
+    margin: 0;
   }
 
   .summary-markdown :global(li) {

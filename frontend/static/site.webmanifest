@@ -4,8 +4,8 @@
   "description": "AI-powered document analysis and insights",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#703bf7",
+  "background_color": "#0f0e19",
+  "theme_color": "#0f0e19",
   "icons": [
     {
       "src": "/favicon.png",

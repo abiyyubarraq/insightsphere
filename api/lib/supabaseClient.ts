@@ -3,6 +3,7 @@ import {
   isAuthRetryableFetchError,
   type SupabaseClient,
 } from "@supabase/supabase-js";
+import type { SuggestionDoc } from "./suggestions.ts";
 
 /**
  * Supabase Auth could not be reached or failed on its side, so nothing is known
@@ -408,6 +409,22 @@ export class SupabaseService {
       console.error("Error checking project access:", error);
       return false;
     }
+  }
+
+  /**
+   * The project's ready documents, newest first. The service role skips RLS,
+   * so call this only after userHasProjectAccess for the same project.
+   */
+  async getReadyDocuments(projectId: string): Promise<SuggestionDoc[]> {
+    const { data, error } = await this.client
+      .from("project_files")
+      .select("id, file_name, summary, is_summary_exist, updated_at")
+      .eq("project_id", projectId)
+      .eq("status", "ready")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to list ready documents: ${error.message}`);
+    return (data ?? []) as SuggestionDoc[];
   }
 
   /**

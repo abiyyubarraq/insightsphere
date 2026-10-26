@@ -8,7 +8,7 @@ import {
   supabaseService,
 } from "../../lib/supabaseClient.ts";
 import type { OpenAIClient } from "../../lib/openaiClient.ts";
-import { failureText, OpenAIRequestError } from "../../lib/openaiErrors.ts";
+import { embeddingFailedOnPage, failureText } from "../../lib/openaiErrors.ts";
 import type { ChosenClient } from "../../lib/openaiForUser.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
@@ -416,15 +416,7 @@ async function runPipeline(
         console.log(`  🧠 Generated ${embeddings.length} embeddings`);
       } catch (openaiError) {
         console.error("❌ OpenAI embeddings failed:", openaiError);
-        if (openaiError instanceof OpenAIRequestError) throw openaiError;
-        throw new Error(
-          `OpenAI embedding generation failed for page ${pageNumber}. ` +
-            `Error: ${
-              openaiError instanceof Error
-                ? openaiError.message
-                : "Unknown error"
-            }`
-        );
+        throw embeddingFailedOnPage(pageNumber, openaiError);
       }
 
       // Step 4: Prepare document chunks for Qdrant

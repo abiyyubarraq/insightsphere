@@ -29,7 +29,8 @@
   import MainContent from './MainContent.svelte';
   import FileLibraryModal from './FileLibraryModal.svelte';
   import { FILE_CONSTRAINTS } from '../../../../../shared/constants/index';
-  import { isStillCurrent } from '$lib/staleResponse';
+  import { isStillCurrent, replyForProject } from '$lib/staleResponse';
+  import { readyFilesKey } from '$lib/suggestions';
 
   // What the picker offers and what the guard below accepts are the same list,
   // and the API enforces the same limits again because an upload goes straight
@@ -57,6 +58,7 @@
   let downloadingFileLoading: Record<string, boolean> = $state({});
   let showCreateModal = $state(false);
   let loadingFiles = $state(false);
+  let filesKey = $derived(readyFilesKey(uploadedFiles, loadingFiles));
   // Not reactive: counts file list requests so only the newest one is applied.
   let filesRequest = 0;
 
@@ -224,7 +226,9 @@
     const files = target.files;
 
     if (!files || files.length === 0) return;
-    if (!$selectedProject || !$user) {
+    const project = $selectedProject;
+    const userId = $user?.id;
+    if (!project || !userId) {
       showError('Please select a project first');
       return;
     }
@@ -257,12 +261,16 @@
         // Upload all files sequentially
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
-          await uploadDocument(file, $selectedProject.id, $user.id);
+          await uploadDocument(file, project.id, userId);
         }
 
         // Refresh the files list to show the new files
-        const updatedFiles = await getProjectFiles($selectedProject.id, $user.id);
-        uploadedFiles = updatedFiles;
+        const updatedFiles = replyForProject(
+          await getProjectFiles(project.id, userId),
+          project.id,
+          $selectedProject?.id
+        );
+        if (updatedFiles) uploadedFiles = updatedFiles;
 
         // Clear the file input
         if (fileInput) {
@@ -341,16 +349,24 @@
     const fileId = event.detail.fileId;
     const file = uploadedFiles.find((f) => f.id === fileId);
 
-    if (!file || !$selectedProject || !$user) {
+    const project = $selectedProject;
+    const userId = $user?.id;
+    if (!file || !project || !userId) {
       showError('File or project not found');
       return;
     }
 
     await withLoading(
       async () => {
-        await processDocument($selectedProject.id, file.id, file.storage_path);
+        await processDocument(project.id, file.id, file.storage_path);
         // Returns 202; the status arrives through polling.
-        uploadedFiles = await getProjectFiles($selectedProject.id, $user.id);
+        const files = replyForProject(
+          await getProjectFiles(project.id, userId),
+          project.id,
+          $selectedProject?.id
+        );
+        if (!files) return;
+        uploadedFiles = files;
         pollWhileProcessing();
       },
       (loadingState) => {
@@ -364,15 +380,23 @@
     const fileId = event.detail.fileId;
     const file = uploadedFiles.find((f) => f.id === fileId);
 
-    if (!file || !$selectedProject || !$user) {
+    const project = $selectedProject;
+    const userId = $user?.id;
+    if (!file || !project || !userId) {
       showError('File or project not found');
       return;
     }
 
     await withLoading(
       async () => {
-        await processDocument($selectedProject.id, file.id, file.storage_path);
-        uploadedFiles = await getProjectFiles($selectedProject.id, $user.id);
+        await processDocument(project.id, file.id, file.storage_path);
+        const files = replyForProject(
+          await getProjectFiles(project.id, userId),
+          project.id,
+          $selectedProject?.id
+        );
+        if (!files) return;
+        uploadedFiles = files;
         pollWhileProcessing();
       },
       (loadingState) => {
@@ -633,9 +657,11 @@
     bind:successNotif
     bind:uploadLoading
     bind:fileFilter
+    {filesKey}
     onToggleLeftSidebar={toggleLeftSidebar}
     onToggleRightSidebar={toggleRightSidebar}
     onCreateNewProject={handleCreateNewProject}
+    onUploadClick={handleUploadClick}
     onClearErrorNotif={() => (errorNotif = '')}
     onClearSuccessNotif={clearSuccessNotif}
   />

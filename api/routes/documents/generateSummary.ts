@@ -123,16 +123,15 @@ export async function generateSummary(c: Context) {
       );
     }
 
-    try {
-      console.log(`Uploading file to OpenAI: ${tempFilePath}`);
-      uploadResponseId = await client.uploadFile(tempFilePath);
-      console.log(`File uploaded to OpenAI with ID: ${uploadResponseId}`);
-      const request: ChatCompletionRequest = {
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are InsightSphere, an intelligent document analysis and summarization assistant.
+    console.log(`Uploading file to OpenAI: ${tempFilePath}`);
+    uploadResponseId = await client.uploadFile(tempFilePath);
+    console.log(`File uploaded to OpenAI with ID: ${uploadResponseId}`);
+    const request: ChatCompletionRequest = {
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are InsightSphere, an intelligent document analysis and summarization assistant.
 
 ## Core Instructions:
 1. **Read and analyze** the uploaded file thoroughly and comprehensively
@@ -166,41 +165,37 @@ export async function generateSummary(c: Context) {
 [Important keywords, technical terms, or concepts that someone should know when working with this document]
 
 **Note:** Ensure your summary is comprehensive yet concise, maintaining the document's original meaning while making it accessible to readers who need to quickly understand the content.`,
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "Please provide a comprehensive analysis and summary of the uploaded document. Focus on extracting the most important information, key insights, and actionable takeaways while maintaining accuracy to the original content.",
-              },
-              {
-                type: "file",
-                file: { file_id: uploadResponseId },
-              },
-            ],
-          },
-        ],
-        max_tokens: 3000,
-        temperature: 0.1,
-        top_p: 0.95,
-      };
-      const result = await client.generateChatCompletion(request);
-      await supabaseService.updateDocument(document_id, {
-        summary: result.answer,
-        is_summary_exist: true,
-      });
-      if (uploadResponseId) {
-        await client.deleteFile(uploadResponseId);
-        uploadResponseId = null;
-      }
-      if (tempFilePath) {
-        await supabaseService.cleanupTempFile(tempFilePath);
-        tempFilePath = null;
-      }
-    } catch (openaiError) {
-      console.error("❌ OpenAI summary generation failed:", openaiError);
-      throw openaiError;
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Please provide a comprehensive analysis and summary of the uploaded document. Focus on extracting the most important information, key insights, and actionable takeaways while maintaining accuracy to the original content.",
+            },
+            {
+              type: "file",
+              file: { file_id: uploadResponseId },
+            },
+          ],
+        },
+      ],
+      max_tokens: 3000,
+      temperature: 0.1,
+      top_p: 0.95,
+    };
+    const result = await client.generateChatCompletion(request);
+    await supabaseService.updateDocument(document_id, {
+      summary: result.answer,
+      is_summary_exist: true,
+    });
+    if (uploadResponseId) {
+      await client.deleteFile(uploadResponseId);
+      uploadResponseId = null;
+    }
+    if (tempFilePath) {
+      await supabaseService.cleanupTempFile(tempFilePath);
+      tempFilePath = null;
     }
 
     const processingTime = Date.now() - startTime;

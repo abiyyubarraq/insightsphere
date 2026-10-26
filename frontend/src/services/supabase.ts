@@ -3,6 +3,7 @@ import type {
   ChatCitation,
   ChatMessage,
   GetConversationHistoryResponse,
+  QuerySuggestionsResponse,
   SendMessageRequest,
   SendMessageResponse,
 } from '../../../shared/types/chat';
@@ -661,6 +662,12 @@ export const processDocument = async (
   const data = await response.json();
   return data;
 };
+
+export const getQuerySuggestions = (
+  projectId: string,
+  signal?: AbortSignal
+): Promise<QuerySuggestionsResponse> =>
+  authedFetch(`/projects/${projectId}/query/suggestions`, { signal });
 
 /** The user's own OpenAI key as the API describes it. The key itself never comes back. */
 export interface ApiKeyStatus {

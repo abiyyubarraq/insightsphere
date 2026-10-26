@@ -84,6 +84,14 @@ export interface SendMessageResponse {
     };
 }
 
+export interface QuerySuggestionsResponse {
+    success: boolean;
+    project_id: string;
+    suggestions: string[];
+    source: "generated" | "fallback" | "empty";
+    generated_at: string;
+}
+
 export interface GetConversationHistoryRequest {
     conversation_id: string;
     limit?: number;

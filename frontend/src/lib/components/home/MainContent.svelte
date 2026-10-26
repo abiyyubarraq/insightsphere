@@ -16,6 +16,7 @@
     getConversationHistory,
     getOlderMessages,
     deleteConversationHistory,
+    getQuerySuggestions,
     isLimitError,
   } from '../../../services/supabase';
   import type { ChatMessage } from '../../../../../shared/types/chat';
@@ -24,6 +25,7 @@
   import { canSend, shouldSubmitOnKey } from '$lib/chatComposer';
   import { applyOlderPage } from '$lib/chatHistory';
   import { isStillCurrent } from '$lib/staleResponse';
+  import { readSuggestions, suggestionsKey, type SuggestionsView } from '$lib/suggestions';
 
   let {
     leftSidebarOpen = $bindable(),
@@ -33,9 +35,11 @@
     successNotif = $bindable(),
     uploadLoading = $bindable(),
     fileFilter = $bindable(),
+    filesKey = null,
     onToggleLeftSidebar,
     onToggleRightSidebar,
     onCreateNewProject,
+    onUploadClick,
     onClearErrorNotif,
     onClearSuccessNotif,
   } = $props<{
@@ -46,9 +50,12 @@
     successNotif?: string;
     uploadLoading?: boolean;
     fileFilter?: string;
+    /** Ready files of the selected project, or null while they load. */
+    filesKey?: string | null;
     onToggleLeftSidebar: () => void;
     onToggleRightSidebar: () => void;
     onCreateNewProject: () => void;
+    onUploadClick: () => void;
     onClearErrorNotif: () => void;
     onClearSuccessNotif: () => void;
   }>();
@@ -94,6 +101,51 @@
     hasMore = false;
     loadingOlder = false;
   };
+
+  let suggestionsFor = $derived(
+    suggestionsKey({
+      projectId: $selectedProject?.id,
+      loadedProjectId,
+      loadingHistory,
+      hasMessages,
+      filesKey,
+    })
+  );
+  let suggestionsView: SuggestionsView = $state({ status: 'hidden' });
+  // Not reactive: the key the current suggestionsView belongs to.
+  let suggestionsShownFor: string | null = null;
+
+  // Fetched only when the key changes, so going back to an empty chat with the
+  // same documents shows the same chips without another request.
+  $effect(() => {
+    const key = suggestionsFor;
+    if (key === null || key === suggestionsShownFor) return;
+    const projectId = untrack(() => loadedProjectId);
+    if (!projectId) return;
+
+    suggestionsShownFor = key;
+    suggestionsView = { status: 'loading' };
+    const controller = new AbortController();
+    let settled = false;
+    getQuerySuggestions(projectId, controller.signal)
+      .then((response) => {
+        if (!controller.signal.aborted) suggestionsView = readSuggestions(response);
+      })
+      .catch(() => {
+        // No banner: the empty chat works the same without suggestions.
+        if (!controller.signal.aborted) suggestionsView = { status: 'hidden' };
+      })
+      .finally(() => {
+        settled = true;
+      });
+
+    // Runs when the key changes (another project, a message sent) and on
+    // unmount. An unfinished request is dropped and asked again next time.
+    return () => {
+      controller.abort();
+      if (!settled) suggestionsShownFor = null;
+    };
+  });
 
   const MAX_INPUT_HEIGHT_PX = 200;
 
@@ -216,11 +268,10 @@
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!canSend(userInput, chatLoading) || !$selectedProject || !$user) return;
+  const handleSendMessage = async (text: string) => {
+    if (!canSend(text, chatLoading) || !$selectedProject || !$user) return;
 
-    const message = userInput.trim();
-    userInput = '';
+    const message = text.trim();
     chatError = '';
 
     // Add user message to UI immediately
@@ -287,6 +338,13 @@
     }
   };
 
+  const sendComposerInput = () => {
+    if (!canSend(userInput, chatLoading)) return;
+    const text = userInput;
+    userInput = '';
+    handleSendMessage(text);
+  };
+
   const handleStop = () => {
     cancelPendingAnswer();
     textareaEl?.focus();
@@ -299,14 +357,15 @@
       showClearConfirmDialog = true;
       return;
     }
-    // No id yet, but a Stopped or failed send may have saved the question already.
-    // Delete it without a dialog, or the next send would bring it back.
+    // No id yet, but a Stopped send may have saved the question already: the
+    // API still finishes after Stop. Delete it without a dialog, or the next
+    // send would bring it back.
     try {
       clearLoading = true;
-      resetPaging();
       await deleteConversationHistory($selectedProject.id);
       chatMessages = [];
       chatError = '';
+      resetPaging();
     } catch (error) {
       console.error('Failed to clear conversation:', error);
       chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
@@ -342,7 +401,7 @@
   const handleKeyDown = (e: KeyboardEvent) => {
     if (shouldSubmitOnKey(e)) {
       e.preventDefault();
-      handleSendMessage();
+      sendComposerInput();
     }
   };
 
@@ -727,7 +786,7 @@
                     <button
                       type="button"
                       class="btn btn-circle btn-sm btn-primary"
-                      onclick={handleSendMessage}
+                      onclick={sendComposerInput}
                       disabled={!canSend(userInput, false)}
                       aria-label="Send message"
                     >
@@ -744,8 +803,53 @@
               </div>
 
               {#if !hasMessages}
-                <!-- Room under the composer for suggested questions. -->
-                <div class="min-h-16"></div>
+                <!-- Reserved height so the composer does not move when the chips arrive. -->
+                <div class="mt-4 min-h-50 sm:min-h-24">
+                  {#if suggestionsFor !== null && suggestionsView.status === 'loading'}
+                    <div
+                      class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                      role="status"
+                      aria-busy="true"
+                      aria-label="Loading suggested questions"
+                      data-testid="suggestions-loading"
+                    >
+                      {#each [0, 1, 2, 3] as index (index)}
+                        <div class="skeleton h-11 rounded-xl"></div>
+                      {/each}
+                    </div>
+                  {:else if suggestionsFor !== null && suggestionsView.status === 'chips'}
+                    <ul
+                      class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                      aria-label="Suggested questions"
+                      data-testid="suggestions"
+                    >
+                      {#each suggestionsView.suggestions as question, index (index)}
+                        <li class="flex">
+                          <button
+                            type="button"
+                            class="flex min-h-11 w-full cursor-pointer items-center rounded-xl border border-base-content/15 bg-transparent px-3 py-2 text-left text-sm leading-5 text-base-content/80 transition-colors hover:border-base-content/30 hover:bg-base-200 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+                            title={question}
+                            disabled={chatLoading}
+                            onclick={() => handleSendMessage(question)}
+                          >
+                            <span class="line-clamp-2">{question}</span>
+                          </button>
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else if suggestionsFor !== null && suggestionsView.status === 'empty'}
+                    <p class="px-1 text-sm text-base-content/60" data-testid="suggestions-empty">
+                      <button
+                        type="button"
+                        class="link link-hover text-base-content/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-sm"
+                        onclick={onUploadClick}
+                      >
+                        Upload a document
+                      </button>
+                      to start.
+                    </p>
+                  {/if}
+                </div>
               {/if}
             </div>
           </div>
