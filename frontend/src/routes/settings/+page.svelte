@@ -241,7 +241,7 @@
                 />
                 <button
                   type="button"
-                  class="btn btn-ghost btn-xs btn-square -mr-1"
+                  class="btn btn-ghost btn-square -my-px -mr-2"
                   aria-label={showKey ? 'Hide key' : 'Show key'}
                   aria-pressed={showKey}
                   title={showKey ? 'Hide key' : 'Show key'}
