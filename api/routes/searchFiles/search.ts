@@ -88,13 +88,12 @@ export async function searchFiles(c: Context) {
     if (keyFailure) return keyFailure;
 
     if (error instanceof Error && error.message.includes("Access denied")) {
-      return c.json({ error: error.message }, 403);
+      return c.json({ error: "Access denied to this project" }, 403);
     }
 
     return c.json(
       {
         error: "Failed to list files",
-        details: error instanceof Error ? error.message : "Unknown error",
       },
       500
     );

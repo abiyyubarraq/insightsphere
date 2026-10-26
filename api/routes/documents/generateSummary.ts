@@ -236,15 +236,13 @@ export async function generateSummary(c: Context) {
     if (keyFailure) return keyFailure;
 
     const processingTime = Date.now() - startTime;
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error occurred";
 
     return c.json(
       {
         success: false,
         document_id: "",
         processing_time_ms: processingTime,
-        error: errorMessage,
+        error: "Could not generate the summary",
       },
       500
     );

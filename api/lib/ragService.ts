@@ -94,7 +94,7 @@ export class RAGService {
     const { client, own } = openai;
     const startTime = Date.now();
     console.log(`🔍 Starting RAG query for project: ${projectId}`);
-    console.log(`❓ Query: "${query}"`);
+    console.log(`❓ Query length: ${query.length}`);
 
     const {
       max_chunks = SEARCH_DEFAULTS.maxChunks,
@@ -114,11 +114,9 @@ export class RAGService {
         this.rewriteWith(client),
       );
 
-      // Logged as a pair on purpose: the effect of a rewrite can only be judged
-      // against the question it replaced, on this corpus.
       console.log(
         rewritten
-          ? `✏️ Rewritten for retrieval: "${query}" -> "${searchQuery}"`
+          ? `✏️ Rewritten for retrieval (${query.length} -> ${searchQuery.length} chars)`
           : `✏️ No rewrite (${
             conversation_turns.length === 0 ? "first turn" : "kept original"
           })`,

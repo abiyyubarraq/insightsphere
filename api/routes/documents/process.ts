@@ -141,7 +141,7 @@ export async function processDocument(c: Context) {
     return c.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: "Could not start processing the document",
       } as DocumentProcessResponse,
       500,
     );

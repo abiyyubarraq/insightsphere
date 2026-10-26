@@ -43,7 +43,7 @@ export async function searchDocuments(c: Context) {
       return c.json({ error: "Project ID is required" }, 400);
     }
 
-    console.log(`🔍 Searching in project: ${project_id} for query: "${query}"`);
+    console.log(`🔍 Searching in project: ${project_id}, query length: ${query.length}`);
 
     const user = currentUser(c);
 
@@ -73,7 +73,6 @@ export async function searchDocuments(c: Context) {
       if (keyFailure) return keyFailure;
       return c.json({
         error: "Could not process the query",
-        details: error instanceof Error ? error.message : "Unknown error",
       }, 502);
     }
 
@@ -124,7 +123,6 @@ export async function searchDocuments(c: Context) {
     console.error("Search failed:", error);
     return c.json({
       error: "Search failed",
-      details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
 }

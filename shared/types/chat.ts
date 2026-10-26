@@ -100,7 +100,7 @@ export interface GetConversationHistoryRequest {
 
 export interface GetConversationHistoryResponse {
     success: boolean;
-    conversation: ChatConversation;
+    conversation: ChatConversation | null;
     messages: ChatMessage[]; // Includes citations for assistant messages
     has_more: boolean;
 }
