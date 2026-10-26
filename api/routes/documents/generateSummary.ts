@@ -13,6 +13,7 @@ import type { ChosenClient } from "../../lib/openaiForUser.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { MAX_FILE_BYTES } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
+import { documentInProject } from "../../lib/documentAccess.ts";
 import {
   chargeUserQuota,
   quotaExceeded,
@@ -57,6 +58,17 @@ export async function generateSummary(c: Context) {
           error: "Access denied to project",
         } as DocumentProcessResponse,
         403,
+      );
+    }
+
+    // Before the quota charge and the OpenAI call, so a refused request costs nothing.
+    if (documentInProject(document, user.id, project_id) === "not_found") {
+      return c.json(
+        {
+          success: false,
+          error: "Document not found in this project.",
+        } as DocumentProcessResponse,
+        404,
       );
     }
 

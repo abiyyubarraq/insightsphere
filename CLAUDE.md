@@ -110,6 +110,11 @@ for a document already processing; summary answers **409** when one exists,
 unless the body has `regenerate: true`. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
 
+Chat answers **404** `"Conversation not found."` for a `conversation_id` that
+is not the user's own in that project. Process and summary answer **404** when
+the body `project_id` is not the document's own project. Both come before the
+quota charge, so a refused request costs nothing.
+
 For a user with their own key, every OpenAI call uses that key (`openAIForUser`,
 one client per request) and never falls back to the server key. When it fails,
 chat, query, summary, `/v1/search/query` and semantic `/v1/searchFiles` answer
