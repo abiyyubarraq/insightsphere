@@ -1,5 +1,6 @@
 import { FileLibraryItem } from "../../../shared/types/index.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
+import { escapeLike } from "../../lib/likePattern.ts";
 
 /**
  * Format file data from Supabase response
@@ -65,7 +66,7 @@ export function buildBaseQuery(
   }
 
   if (searchQuery && searchQuery.trim()) {
-    query = query.ilike("file_name", `%${searchQuery}%`);
+    query = query.ilike("file_name", `%${escapeLike(searchQuery)}%`);
   }
 
   return query;
@@ -90,7 +91,7 @@ export async function getFileCount(
   }
 
   if (searchQuery && searchQuery.trim()) {
-    countQuery = countQuery.ilike("file_name", `%${searchQuery}%`);
+    countQuery = countQuery.ilike("file_name", `%${escapeLike(searchQuery)}%`);
   }
 
   const { count, error: countError } = await countQuery;

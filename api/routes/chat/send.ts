@@ -28,6 +28,7 @@ import { keyFailureResponse } from "../../lib/openaiErrors.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
 import type { HistoryTurn } from "../../lib/queryRewrite.ts";
 import { answerThenSave } from "../../lib/chatExchange.ts";
+import { checkBodyConversation } from "../../lib/conversationAccess.ts";
 import type {
   SendMessageRequest,
   SendMessageResponse,
@@ -38,14 +39,11 @@ export async function sendChatMessage(c: Context) {
   try {
     const startTime = Date.now();
     const user = currentUser(c);
-    console.log("🔥 sendChatMessage function called!");
 
     // Extract project ID from URL
     const projectId = c.req.param("projectId");
-    console.log("📋 Project ID:", projectId);
 
     if (!projectId) {
-      console.log("❌ No project ID provided");
       return c.json({
         success: false,
         error: "Project ID is required",
@@ -63,8 +61,6 @@ export async function sendChatMessage(c: Context) {
       }, 400);
     }
 
-    console.log(`💬 Chat message request - Project: ${projectId}`);
-
     // Verify user has access to project
     const hasAccess = await supabaseService.userHasProjectAccess(
       user.id,
@@ -78,6 +74,23 @@ export async function sendChatMessage(c: Context) {
       }, 403);
     }
 
+    const chatService = new ChatService(supabaseService.getClient());
+
+    // Before the OpenAI client and the quota charge, so a refused id costs
+    // nothing. Runs even without history: the messages are still saved into it.
+    const conversationCheck = await checkBodyConversation(
+      conversation_id,
+      user.id,
+      projectId,
+      (id) => chatService.getConversationById(id),
+    );
+    if (conversationCheck === "not_found") {
+      return c.json({
+        success: false,
+        error: "Conversation not found.",
+      }, 404);
+    }
+
     // One client for the rewrite, the embedding and the answer.
     const openai = await openAIForUser(user.id);
     own = openai.own;
@@ -86,9 +99,6 @@ export async function sendChatMessage(c: Context) {
     // answer later fails.
     const quota = await chargeUserQuota({ own, userId: user.id, kind: "chat" });
     if (!quota.allowed) return quotaExceeded(c, "chat", quota.limit);
-
-    // Initialize chat service
-    const chatService = new ChatService(supabaseService.getClient());
 
     // Only looked up here. A new conversation is created after the answer.
     const existingConversationId = conversation_id ||
