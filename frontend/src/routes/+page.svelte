@@ -1,16 +1,37 @@
 <script lang="ts">
-  import { UserDashboard, LoadingState, AuthButtons } from '../lib/components/home';
+  import { FileText, Languages, Quote } from 'lucide-svelte';
+  import { UserDashboard, LoadingState } from '../lib/components/home';
+  import ProductPreview from '$lib/components/landing/ProductPreview.svelte';
+  import Footer from '$lib/components/landing/Footer.svelte';
   import { isAuthenticated, loading, user } from '../stores/auth';
   import { projects as projectsStore } from '../stores/project';
   const { data } = $props();
   projectsStore.set(data.projects);
+
+  const features = [
+    {
+      icon: FileText,
+      title: 'PDF, DOCX, TXT and Markdown',
+      body: 'Upload your files to a project. Scanned PDF pages are read with OCR.',
+    },
+    {
+      icon: Languages,
+      title: 'English or Indonesian',
+      body: 'Ask your question in either language. The answer comes from the same documents.',
+    },
+    {
+      icon: Quote,
+      title: 'Answers with sources',
+      body: 'Every answer cites its source. For PDFs it shows the page.',
+    },
+  ];
 </script>
 
 <svelte:head>
-  <title>InsightSphere - AI-Powered Document Analysis</title>
+  <title>InsightSphere - Ask your documents</title>
   <meta
     name="description"
-    content="Transform your documents into actionable insights with AI-powered analysis"
+    content="Upload documents to a project and ask questions about them. Every answer cites its source."
   />
 </svelte:head>
 
@@ -23,66 +44,48 @@
 {:else if $isAuthenticated && $user}
   <UserDashboard />
 {:else}
-  <!-- Non-authenticated Layout -->
-  <div class="relative min-h-screen bg-black">
-    <!-- Gradient Circle Background -->
-    <!-- <div class="absolute inset-0 flex items-center justify-center">
-      <div
-        class="w-96 h-96 bg-gradient-to-br from-primary/20 via-secondary/10 to-transparent rounded-full blur-3xl"
-      ></div>
-      <div
-        class="absolute w-64 h-64 bg-gradient-to-tl from-primary/15 via-primary/10 to-transparent rounded-full blur-2xl -translate-x-20 translate-y-10"
-      ></div>
-    </div> -->
+  <div class="flex min-h-dvh flex-col bg-base-100 text-base-content">
+    <header class="mx-auto w-full max-w-5xl px-4 pt-8 sm:px-6">
+      <p class="text-lg font-semibold tracking-tight">InsightSphere</p>
+    </header>
 
-    <div class="relative z-10">
-      <!-- Navigation Bar -->
-      <!-- <div class="navbar bg-black/80 backdrop-blur-sm">
-        <div class="navbar-start">
-          <div class="flex items-center space-x-3">
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-secondary-500 flex items-center justify-center">
-              <span class="text-white font-bold">I</span>
-            </div>
-            <span class="text-xl font-bold text-white">InsightSphere</span>
+    <div class="flex-1">
+      <section
+        class="mx-auto grid max-w-5xl items-center gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[7fr_5fr] lg:py-24"
+      >
+        <div class="space-y-6">
+          <h1 class="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+            Ask your documents. Get answers you can check.
+          </h1>
+          <p class="max-w-prose text-lg text-base-content/70">
+            Upload files to a project and ask questions in plain words. Every answer shows which
+            file it came from, and for a PDF, which page.
+          </p>
+          <div class="flex flex-wrap gap-4">
+            <a href="/signup" class="btn btn-primary">Get started</a>
+            <a href="/login" class="btn btn-outline border-base-content/20">Sign in</a>
           </div>
         </div>
-        
-        <div class="navbar-end">
-          <AuthButtons />
-        </div>
-      </div> -->
 
-      <!-- Hero Section -->
-      <section class="flex items-center justify-center min-h-full min-w-full p-8">
-        <div class="text-center space-y-8 max-w-4xl">
-          <div class="space-y-6">
-            <h1 class="text-5xl font-bold text-white gradient-heading h-[12vh]">InsightSphere</h1>
+        <ProductPreview />
+      </section>
 
-            <!-- Home Image -->
-            <div class="flex justify-center">
-              <img
-                src="/home.png"
-                alt="InsightSphere Dashboard Preview"
-                class="max-w-full h-[50vh] rounded-lg shadow-2xl"
-              />
-            </div>
-
-            <p class="text-lg text-base-content/70">AI-powered document analysis and insights</p>
-          </div>
-          <div class="flex justify-center">
-            <AuthButtons />
-          </div>
+      <section aria-labelledby="features-heading" class="border-t border-base-content/10">
+        <div class="mx-auto max-w-5xl px-4 py-16 sm:px-6">
+          <h2 id="features-heading" class="text-2xl font-semibold tracking-tight">What it does</h2>
+          <ul class="mt-8 grid gap-8 md:grid-cols-3">
+            {#each features as feature (feature.title)}
+              <li class="space-y-2">
+                <feature.icon class="mb-4 size-5 text-base-content/70" aria-hidden="true" />
+                <h3 class="text-base font-semibold">{feature.title}</h3>
+                <p class="text-base text-base-content/70">{feature.body}</p>
+              </li>
+            {/each}
+          </ul>
         </div>
       </section>
     </div>
+
+    <Footer />
   </div>
 {/if}
-
-<style>
-  .gradient-heading {
-    background: linear-gradient(45deg, #703bf7 0%, #6e29df 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
-</style>

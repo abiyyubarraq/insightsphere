@@ -35,6 +35,12 @@
   --noise: 0;
 }
 
+/* DaisyUI removes the outline from .link on focus, which hides it from keyboard users. */
+.link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 html,
 body {
   height: 100%;

@@ -4,6 +4,7 @@ import {
   MIN_PASSWORD_LENGTH,
   classifyRecoverError,
   classifySignInError,
+  classifySignUpError,
   classifyUpdatePasswordError,
   isValidEmail,
   validateNewPassword,
@@ -144,5 +145,37 @@ describe('turning a password-update error into what the user sees', () => {
     expect(AUTH_ERROR_MESSAGES.email_not_confirmed).toBe(
       'Confirm your email first, then sign in. Check your inbox for the link.'
     );
+  });
+});
+
+describe('turning a sign-up error into what the user sees', () => {
+  // Raw Supabase wording ("User already registered") must not reach the screen.
+  it('reports an email that already has an account', () => {
+    expect(classifySignUpError({ status: 422, code: 'user_already_exists' })).toBe('user_exists');
+    expect(AUTH_ERROR_MESSAGES.user_exists).toBe(
+      'An account with this email already exists. Sign in instead.'
+    );
+  });
+
+  // The project may enforce a stronger rule than the 6 characters checked in the form.
+  it('reports a password Supabase finds too weak', () => {
+    expect(classifySignUpError({ status: 422, code: 'weak_password' })).toBe('weak_password');
+  });
+
+  it('reports an address Supabase refuses', () => {
+    expect(classifySignUpError({ status: 400, code: 'email_address_invalid' })).toBe(
+      'invalid_email'
+    );
+  });
+
+  // Before this, signup put the Supabase message on screen as it came.
+  it('reports any other error as unknown, even when it carries a raw message', () => {
+    const raw = {
+      status: 500,
+      code: 'unexpected_failure',
+      message: 'Database error saving new user',
+    };
+    expect(classifySignUpError(raw)).toBe('unknown');
+    expect(classifySignUpError({})).toBe('unknown');
   });
 });

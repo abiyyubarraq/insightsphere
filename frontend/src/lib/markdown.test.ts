@@ -33,6 +33,14 @@ describe('sanitising model output', () => {
     expect(html).toContain('<li>one</li>');
   });
 
+  // The chat styles lists by nesting (disc, then circle). If the nested list
+  // ended up outside its parent item, the second level would look flat.
+  it('keeps bulleted, numbered and nested lists as nested HTML', () => {
+    const html = renderMarkdown('- a\n  - b\n\n1. x\n2. y');
+    expect(html).toMatch(/<ul>\s*<li>a\s*<ul>\s*<li>b<\/li>\s*<\/ul>\s*<\/li>\s*<\/ul>/);
+    expect(html).toMatch(/<ol>\s*<li>x<\/li>\s*<li>y<\/li>\s*<\/ol>/);
+  });
+
   it('does not throw on empty input', () => {
     expect(renderMarkdown('')).toBe('');
   });
