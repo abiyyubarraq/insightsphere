@@ -29,6 +29,7 @@
   import MainContent from './MainContent.svelte';
   import FileLibraryModal from './FileLibraryModal.svelte';
   import { FILE_CONSTRAINTS } from '../../../../../shared/constants/index';
+  import { isStillCurrent } from '$lib/staleResponse';
 
   // What the picker offers and what the guard below accepts are the same list,
   // and the API enforces the same limits again because an upload goes straight
@@ -56,6 +57,8 @@
   let downloadingFileLoading: Record<string, boolean> = $state({});
   let showCreateModal = $state(false);
   let loadingFiles = $state(false);
+  // Not reactive: counts file list requests so only the newest one is applied.
+  let filesRequest = 0;
 
   // Confirmation dialog state
   let showConfirmDialog = $state(false);
@@ -89,7 +92,12 @@
       if (!project || !$user) return;
       try {
         const before = uploadedFiles;
-        uploadedFiles = await getProjectFiles(project.id, $user.id);
+        const files = await getProjectFiles(project.id, $user.id);
+        // The user may have switched project while this poll was waiting.
+        if (!isStillCurrent({ projectId: project.id }, { projectId: $selectedProject?.id })) {
+          return;
+        }
+        uploadedFiles = files;
         // Some failures, such as running out of daily pages, are only known once
         // the background work has read the file, so this is the only place the
         // reason can reach the user.
@@ -145,7 +153,7 @@
   };
 
   // Projects list state
-  let showProjectsList = $state(false);
+  let showProjectsList = $state(true);
 
   // Navigation state
   let activeNavItem = $state('');
@@ -181,6 +189,12 @@
       async () => {
         const p = await createProject($user?.id as string, newProjectName.trim());
         projects.update((arr) => [...arr, p]);
+        // A new project has no files. Drop the previous project's list and any
+        // file request still on its way for it.
+        filesRequest += 1;
+        uploadedFiles = [];
+        fileFilter = '';
+        loadingFiles = false;
         selectedProject.set(p);
         newProjectName = '';
         if (closeModal) showCreateModal = false;
@@ -442,16 +456,23 @@
 
   // Helper function to refresh project files
   const refreshProjectFiles = async (project: Project) => {
+    const request = ++filesRequest;
+    const requestedFor = { projectId: project.id, request };
+    const isCurrent = () =>
+      isStillCurrent(requestedFor, { projectId: $selectedProject?.id, request: filesRequest });
     try {
       loadingFiles = true;
+      // A filter typed for the previous project would hide this one's files.
+      if ($selectedProject?.id !== project.id) fileFilter = '';
+      uploadedFiles = [];
       selectedProject.set(project);
 
       const files = await getProjectFiles(project.id, $user?.id || '');
-      uploadedFiles = files;
+      if (isCurrent()) uploadedFiles = files;
     } catch (e) {
-      error = e instanceof Error ? e.message : 'An unknown error occurred';
+      if (isCurrent()) error = e instanceof Error ? e.message : 'An unknown error occurred';
     } finally {
-      loadingFiles = false;
+      if (isCurrent()) loadingFiles = false;
     }
   };
 

@@ -267,7 +267,10 @@
         <!-- Search Input -->
         <div class="form-control">
           <div class="relative">
-            <Search class="absolute left-3 top-1/4 w-5 h-5 pointer-events-none" />
+            <Search
+              class="absolute left-3 top-1/4 w-5 h-5 pointer-events-none"
+              aria-hidden="true"
+            />
             <input
               type="text"
               placeholder="Search files..."
@@ -325,10 +328,10 @@
         <div class="dropdown dropdown-bottom w-1/6">
           <button type="button" tabindex="0" class="btn btn-outline w-full justify-between">
             <span>{selectedCountText}</span>
-            <ChevronDown class="w-4 h-4" />
+            <ChevronDown class="w-4 h-4" aria-hidden="true" />
           </button>
           <ul
-            class="dropdown-content menu bg-base-200 rounded-box z-[1] w-full p-2 shadow-lg border border-base-300 max-h-60 overflow-y-auto"
+            class="dropdown-content menu bg-base-200 rounded-box z-[1] w-full p-2 border border-base-content/10 max-h-60 overflow-y-auto"
           >
             <!-- Select All Option -->
             <li>
@@ -343,7 +346,7 @@
                 <span class="label-text font-semibold">All Projects</span>
               </label>
             </li>
-            <li><hr class="my-1 border-base-300" /></li>
+            <li><hr class="my-1 border-base-content/10" /></li>
             <!-- Individual Projects -->
             {#each $projects as project}
               <li>
@@ -369,11 +372,11 @@
       <div class="flex-1 overflow-y-auto min-h-0">
         {#if loading && files.length === 0}
           <div class="flex justify-center items-center h-64">
-            <Loader class="w-8 h-8 animate-spin text-primary" />
+            <Loader class="w-8 h-8 animate-spin text-primary" aria-hidden="true" />
           </div>
         {:else if files.length === 0}
           <div class="flex flex-col items-center justify-center h-64 text-center">
-            <FileText class="w-16 h-16 text-base-content/30 mb-4" />
+            <FileText class="w-16 h-16 text-base-content/60 mb-4" aria-hidden="true" />
             <p class="text-lg font-semibold">No files found</p>
             <p class="text-base-content/70">
               {searchQuery.trim()
@@ -414,7 +417,7 @@
                         />
                       </button>
                     {:else}
-                      <FileText class="w-16 h-16 text-base-content/40" />
+                      <FileText class="w-16 h-16 text-base-content/60" aria-hidden="true" />
                     {/if}
                   </div>
 
@@ -460,7 +463,7 @@
             <div class="flex justify-center mt-6">
               <button class="btn btn-primary" onclick={handleLoadMore} disabled={loading}>
                 {#if loading}
-                  <Loader class="w-4 h-4 animate-spin" />
+                  <Loader class="w-4 h-4 animate-spin" aria-hidden="true" />
                 {/if}
                 Load More
               </button>
@@ -469,7 +472,7 @@
 
           {#if loading && files.length > 0}
             <div class="flex justify-center mt-4">
-              <Loader class="w-6 h-6 animate-spin text-primary" />
+              <Loader class="w-6 h-6 animate-spin text-primary" aria-hidden="true" />
             </div>
           {/if}
         {/if}

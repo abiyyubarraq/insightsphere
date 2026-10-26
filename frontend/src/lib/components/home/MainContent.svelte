@@ -8,12 +8,13 @@
     SquarePen,
     TriangleAlert,
   } from 'lucide-svelte';
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { selectedProject, projects } from '../../../stores/project';
   import { user } from '../../../stores/auth';
   import {
     sendChatMessage,
     getConversationHistory,
+    getOlderMessages,
     deleteConversationHistory,
     isLimitError,
   } from '../../../services/supabase';
@@ -21,6 +22,7 @@
   import { ConfirmationDialog, NoticeBanner } from '../common';
   import ChatMarkdown from './ChatMarkdown.svelte';
   import { canSend, shouldSubmitOnKey } from '$lib/chatComposer';
+  import { applyOlderPage } from '$lib/chatHistory';
 
   let {
     leftSidebarOpen = $bindable(),
@@ -65,9 +67,32 @@
   let clearLoading = $state(false);
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let hasMessages = $derived(chatMessages.length > 0);
+  let hasMore = $state(false);
+  let loadingOlder = $state(false);
 
   // Not reactive: only the send, stop and cleanup code read it.
   let pending: { controller: AbortController; assistantId: string } | null = null;
+
+  // Bumped on a project change and on New chat, so an older page that was
+  // requested before either one is dropped when it arrives.
+  let loadGeneration = 0;
+  const currentLoad = () => ({
+    conversationId,
+    projectId: loadedProjectId,
+    generation: loadGeneration,
+  });
+
+  // The newest message the chat last scrolled to. Not reactive: only the scroll
+  // effect and resetPaging use it.
+  let scrolledToId: string | undefined;
+
+  const resetPaging = () => {
+    // Coming back to the same chat later must scroll to its bottom again.
+    scrolledToId = undefined;
+    loadGeneration += 1;
+    hasMore = false;
+    loadingOlder = false;
+  };
 
   const MAX_INPUT_HEIGHT_PX = 200;
 
@@ -95,9 +120,12 @@
 
   onDestroy(() => pending?.controller.abort());
 
-  // Auto-scroll to bottom when new messages arrive
+  // Scroll to the bottom only when the newest message changes. Loading older
+  // messages adds rows at the top and must leave the reader where they are.
   $effect(() => {
-    if (messagesContainer && chatMessages.length > 0) {
+    const newestId = chatMessages.at(-1)?.id;
+    if (messagesContainer && newestId && newestId !== scrolledToId) {
+      scrolledToId = newestId;
       setTimeout(() => {
         messagesContainer?.scrollTo({
           top: messagesContainer.scrollHeight,
@@ -113,10 +141,12 @@
       if (loadedProjectId !== $selectedProject.id) {
         // An answer for the previous project must not land in this one.
         cancelPendingAnswer();
+        untrack(resetPaging);
         loadConversationHistory();
       }
     } else {
       cancelPendingAnswer();
+      untrack(resetPaging);
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
@@ -132,6 +162,7 @@
       chatError = '';
       const response = await getConversationHistory($selectedProject.id);
       chatMessages = response.messages || [];
+      hasMore = response.has_more;
       conversationId = response.conversation?.id;
       loadedProjectId = $selectedProject.id; // Mark this project as loaded
     } catch (error) {
@@ -139,6 +170,38 @@
       chatError = error instanceof Error ? error.message : 'Failed to load conversation history';
     } finally {
       loadingHistory = false;
+    }
+  };
+
+  const loadOlderMessages = async () => {
+    const oldest = chatMessages[0];
+    if (!oldest || !conversationId || loadingOlder) return;
+
+    const requestedFor = currentLoad();
+    loadingOlder = true;
+    chatError = '';
+    try {
+      const page = await getOlderMessages(conversationId, oldest.created_at);
+      const loaded = { messages: chatMessages, hasMore };
+      const next = applyOlderPage(loaded, page, requestedFor, currentLoad());
+      if (next === loaded) return;
+
+      // Keep the message the reader was looking at in the same place on screen.
+      const container = messagesContainer;
+      const oldHeight = container?.scrollHeight ?? 0;
+      const oldTop = container?.scrollTop ?? 0;
+      chatMessages = next.messages;
+      hasMore = next.hasMore;
+      await tick();
+      if (container) container.scrollTop = oldTop + (container.scrollHeight - oldHeight);
+    } catch (error) {
+      if (requestedFor.generation !== loadGeneration) return;
+      console.error('Failed to load older messages:', error);
+      chatError = error instanceof Error ? error.message : 'Failed to load older messages';
+      chatErrorTone = 'error';
+    } finally {
+      // After a project change or New chat, the newer state owns the flag.
+      if (requestedFor.generation === loadGeneration) loadingOlder = false;
     }
   };
 
@@ -229,6 +292,7 @@
     // Delete it without a dialog, or the next send would bring it back.
     try {
       clearLoading = true;
+      resetPaging();
       await deleteConversationHistory($selectedProject.id);
       chatMessages = [];
       chatError = '';
@@ -245,6 +309,7 @@
 
     try {
       clearLoading = true;
+      resetPaging();
       await deleteConversationHistory($selectedProject.id);
       chatMessages = [];
       conversationId = undefined;
@@ -438,11 +503,28 @@
           {#if hasMessages}
             <!-- Chat Messages Area -->
             <!-- Gutter on both edges keeps the column centred in the window when a scrollbar shows. -->
+            <!-- overflow-anchor off: the browser's own scroll anchoring would
+                 add to the manual fix in loadOlderMessages and jump twice. -->
             <div
-              class="flex-1 overflow-y-auto min-h-0 py-6 [scrollbar-gutter:stable_both-edges]"
+              class="flex-1 overflow-y-auto min-h-0 py-6 [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
               bind:this={messagesContainer}
             >
               <div class="mx-auto w-full max-w-3xl space-y-8 px-4">
+                {#if hasMore}
+                  <div class="flex justify-center">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm gap-2 font-normal text-base-content/70"
+                      onclick={loadOlderMessages}
+                      disabled={loadingOlder}
+                    >
+                      {#if loadingOlder}
+                        <span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
+                      {/if}
+                      Load older messages
+                    </button>
+                  </div>
+                {/if}
                 {#each chatMessages as message (message.id)}
                   <div
                     class="flex flex-col {message.role === 'user' ? 'items-end' : 'items-start'}"
