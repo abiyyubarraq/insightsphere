@@ -1,9 +1,11 @@
 <script lang="ts">
   import { renderMarkdown } from '$lib/markdown';
 
-  let { content, messageId, oncitation } = $props<{
+  let { content, messageId, citationCount, oncitation } = $props<{
     content: string;
     messageId: string;
+    /** Chips are drawn only for 1..citationCount. */
+    citationCount: number;
     oncitation?: (messageId: string, citationIndex: number) => void;
   }>();
 
@@ -23,7 +25,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div class="chat-markdown" onclick={onWrapperClick}>
-  {@html renderMarkdown(content, { citations: true })}
+  {@html renderMarkdown(content, { citations: true, citationCount })}
 </div>
 
 <style>

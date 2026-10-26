@@ -48,34 +48,74 @@ describe('sanitising model output', () => {
 
 describe('citation chips', () => {
   it('converts a single reference to a zero-based index', () => {
-    const html = renderCitationChips('see [doc_id: 1]');
+    const html = renderCitationChips('see [doc_id: 1]', 5);
     expect(html).toContain('data-citation-index="0"');
     expect(html).toContain('>1</button>');
   });
 
   it('expands a list into one chip each', () => {
-    const html = renderCitationChips('see [doc_id: 1, 3, 7]');
+    const html = renderCitationChips('see [doc_id: 1, 3, 7]', 7);
     expect(html).toContain('data-citation-index="0"');
     expect(html).toContain('data-citation-index="2"');
     expect(html).toContain('data-citation-index="6"');
   });
 
   it('survives sanitising, which would otherwise strip the data attribute', () => {
-    const html = renderMarkdown('answer [doc_id: 2]', { citations: true });
+    const html = renderMarkdown('answer [doc_id: 2]', { citations: true, citationCount: 5 });
     expect(html).toContain('data-citation-index="1"');
   });
 
   it('emits no inline handler, which would require unsafe-inline in the CSP', () => {
-    const html = renderMarkdown('answer [doc_id: 1]', { citations: true });
+    const html = renderMarkdown('answer [doc_id: 1]', { citations: true, citationCount: 5 });
     expect(html).not.toMatch(/onclick/i);
   });
 
   it('leaves unrelated bracketed text alone', () => {
-    expect(renderCitationChips('an array [1, 2, 3]')).toBe('an array [1, 2, 3]');
-    expect(renderCitationChips('[doc_id: abc]')).toBe('[doc_id: abc]');
+    expect(renderCitationChips('an array [1, 2, 3]', 5)).toBe('an array [1, 2, 3]');
+    expect(renderCitationChips('[doc_id: abc]', 5)).toBe('[doc_id: abc]');
   });
 
   it('ignores a zero index rather than producing -1', () => {
-    expect(renderCitationChips('[doc_id: 0]')).not.toContain('data-citation-index="-1"');
+    expect(renderCitationChips('[doc_id: 0]', 5)).not.toContain('data-citation-index="-1"');
+  });
+
+  // An answer cited 9 and 18 with five sources shown. Old saved messages still
+  // hold such ids, so the display has to guard against them too.
+  it('makes chips only for ids within the source count', () => {
+    const html = renderCitationChips('ok [doc_id: 5] and bad [doc_id: 6] [doc_id: 18]', 5);
+    expect(html).toContain('data-citation-index="4"');
+    expect(html).not.toContain('data-citation-index="5"');
+    expect(html).not.toContain('data-citation-index="17"');
+    expect(html).not.toContain('[doc_id');
+    expect(html).toBe(
+      'ok <button type="button" class="citation-chip" data-citation-index="4" title="View source 5">5</button> and bad'
+    );
+  });
+
+  it('keeps only the valid ids of a mixed list', () => {
+    const html = renderCitationChips('see [doc_id: 2, 9].', 5);
+    expect(html.match(/citation-chip/g)).toHaveLength(1);
+    expect(html).toContain('data-citation-index="1"');
+    expect(html).not.toContain('9');
+  });
+
+  it('removes a marker with no valid id without leftover brackets or spaces', () => {
+    expect(renderCitationChips('<p>As shown [doc_id: 7, 9]. Next [doc_id: 8] point.</p>', 5)).toBe(
+      '<p>As shown. Next point.</p>'
+    );
+    expect(renderCitationChips('<p>[doc_id: 9] Starts here</p>', 5)).toBe('<p>Starts here</p>');
+    expect(renderCitationChips('<p><strong>Key [doc_id: 9]</strong> point</p>', 5)).toBe(
+      '<p><strong>Key</strong> point</p>'
+    );
+  });
+
+  it('removes every marker when there are no sources', () => {
+    const html = renderMarkdown('An answer [doc_id: 1] with [doc_id: 2, 3] ids.', {
+      citations: true,
+      citationCount: 0,
+    });
+    expect(html).not.toContain('citation-chip');
+    expect(html).not.toContain('[doc_id');
+    expect(html).toContain('An answer with ids.');
   });
 });

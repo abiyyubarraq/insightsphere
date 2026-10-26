@@ -5,8 +5,13 @@
 
 import { qdrantService, type QdrantService } from "./qdrantClient.ts";
 import { SEARCH_DEFAULTS } from "./constants.ts";
-import { LLMClientFactory, type LLMResponse } from "./llmClient.ts";
+import {
+  type AnswerOptions,
+  LLMClientFactory,
+  type LLMResponse,
+} from "./llmClient.ts";
 import { type Citation, citationService } from "./citationService.ts";
+import { keepValidCitationIds } from "./citationMarkers.ts";
 import type { OpenAIClient } from "./openaiClient.ts";
 import { OpenAIRequestError, userKeyFailure } from "./openaiErrors.ts";
 import type { ChosenClient } from "./openaiForUser.ts";
@@ -214,15 +219,24 @@ export class RAGService {
         {
           conversationHistory: conversation_history,
           lowConfidence: low_confidence,
+          sourceCount: ragContext.total_chunks,
         },
+      );
+      // The model can still cite a number the context does not have. The
+      // frontend maps N to the Nth source, so such a chip opens nothing.
+      const answer = keepValidCitationIds(
+        llmResponse.answer,
+        ragContext.total_chunks,
       );
 
       console.log(
-        `🤖 LLM response generated: ${llmResponse.answer.length} characters`,
+        `🤖 LLM response generated: ${llmResponse.answer.length} characters, ${
+          llmResponse.answer.length - answer.length
+        } removed with invalid citations`,
       );
 
       return {
-        answer: llmResponse.answer,
+        answer,
         citations: ragContext.citations,
         metadata: {
           query,
@@ -324,7 +338,7 @@ export class RAGService {
     own: boolean,
     context: string,
     query: string,
-    options: { conversationHistory?: string; lowConfidence?: boolean },
+    options: AnswerOptions,
   ): Promise<LLMResponse> {
     try {
       return await LLMClientFactory.create(client).generateAnswer(

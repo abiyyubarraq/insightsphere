@@ -654,6 +654,7 @@
                           <ChatMarkdown
                             content={message.content}
                             messageId={message.id}
+                            citationCount={message.citations?.length ?? 0}
                             oncitation={handleCitationClick}
                           />
                         {:else}

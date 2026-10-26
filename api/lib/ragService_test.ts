@@ -7,6 +7,7 @@ import { OpenAIRequestError } from "./openaiErrors.ts";
 import type { SearchResult } from "./qdrantClient.ts";
 import { REWRITE_MAX_TOKENS } from "./queryRewrite.ts";
 import { type RAGOpenAI, RAGService } from "./ragService.ts";
+import { answerThenSave } from "./chatExchange.ts";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -145,4 +146,46 @@ Deno.test("a server key failure at the answer step still gives the apology", asy
 
   assertEquals(result.metadata.llm_model, "fallback-with-context");
   assert(result.answer.includes("technical difficulties"));
+});
+
+/** Answers with a fixed text, so a test can control what the model cited. */
+function answeringClient(answer: string): RAGOpenAI {
+  return {
+    generateEmbedding: () => Promise.resolve({ embedding: [65], usage }),
+    generateChatCompletion: () =>
+      Promise.resolve({
+        answer,
+        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        model: "gpt-4o-mini",
+      }),
+  };
+}
+
+// An answer cited [doc_id: 9] with one source in its context. The chip had
+// nothing to open, and the bad number was saved and copied into later answers.
+Deno.test("an answer loses citations outside its sources before it is saved", async () => {
+  const { search } = fakeSearch();
+  const service = new RAGService(search);
+  let saved = "";
+
+  const { answer } = await answerThenSave({
+    conversationId: "c1",
+    answer: () =>
+      service.queryProject("project-1", "user-1", "What is N-BEATS?", {
+        client: answeringClient("A model [doc_id: 1, 9] for prices [doc_id: 9]."),
+        own: false,
+      }),
+    ensureConversation: () => Promise.resolve("c1"),
+    saveUser: () => Promise.resolve({ id: "u1" }),
+    // Same as the chat route: the saved text is result.answer.
+    saveAssistant: (_id, result) => {
+      saved = result.answer;
+      return Promise.resolve({ id: "a1" });
+    },
+    deleteMessage: () => Promise.resolve(),
+  });
+
+  assertEquals(answer.citations.length, 1);
+  assertEquals(answer.answer, "A model [doc_id: 1] for prices.");
+  assertEquals(saved, "A model [doc_id: 1] for prices.");
 });

@@ -191,6 +191,17 @@ back to the Nth citation by position. Both the chat route and the history reload
 sort citations by score, so the list handed to `buildContext` must be in score
 order too. `api/lib/retrieval.ts` does that after fusion, and a test pins it.
 
+Citation numbers are only valid inside their own answer, so three guards keep
+chip N and source N in agreement (`api/lib/citationMarkers.ts`):
+
+- Earlier assistant answers lose every `[doc_id: N]` before they go into the
+  answer prompt or the query rewrite. The model copied old numbers otherwise.
+- The prompt names the valid range ("Cite only doc_id 1 to k"), and
+  `ragService` then drops every id outside 1..k from the answer before it is
+  returned or saved.
+- `renderCitationChips` in `frontend/src/lib/markdown.ts` draws chips only for
+  1..n, n being the citations on that message. This covers old saved messages.
+
 ---
 
 ## What not to do
