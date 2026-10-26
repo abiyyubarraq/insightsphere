@@ -1,4 +1,4 @@
-import type { ChatMessage } from '../../../shared/types/chat';
+import type { ChatMessage, GetConversationHistoryResponse } from '../../../shared/types/chat';
 
 export interface ChatState {
   messages: ChatMessage[];
@@ -22,3 +22,38 @@ export const needsChatReset = (
   chatProjectId: string | undefined,
   selectedProjectId: string | undefined
 ): boolean => selectedProjectId !== undefined && selectedProjectId !== chatProjectId;
+
+export type HistoryLoad =
+  | { status: 'loaded'; chat: ChatState }
+  | { status: 'failed' }
+  | { status: 'stale' };
+
+/**
+ * "stale" means the project changed (or New chat ran) while the request was
+ * out, so the caller must not touch the chat on screen, not even to show an error.
+ */
+export const loadHistory = async (
+  fetchHistory: () => Promise<GetConversationHistoryResponse>,
+  isCurrent: () => boolean
+): Promise<HistoryLoad> => {
+  try {
+    const response = await fetchHistory();
+    if (!isCurrent()) return { status: 'stale' };
+    return {
+      status: 'loaded',
+      chat: {
+        messages: response.messages || [],
+        conversationId: response.conversation?.id,
+        hasMore: response.has_more,
+      },
+    };
+  } catch (error) {
+    if (!isCurrent()) return { status: 'stale' };
+    // The raw text can be a Supabase message, so it stays out of the page.
+    console.error('Failed to load conversation history:', error);
+    return { status: 'failed' };
+  }
+};
+
+export const canRetryHistory = (historyFailed: boolean, busy: boolean): boolean =>
+  historyFailed && !busy;

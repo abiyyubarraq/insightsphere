@@ -44,8 +44,18 @@ export async function generateSummary(c: Context) {
       );
     }
 
-    // Throws if the document is missing or not owned by this user.
-    const document = await supabaseService.getDocument(document_id, user.id);
+    // A missing and another user's document get the same 404, before any
+    // claim, quota charge or OpenAI call.
+    const document = await supabaseService.findDocument(document_id, user.id);
+    if (!document) {
+      return c.json(
+        {
+          success: false,
+          error: "Document not found.",
+        } as DocumentProcessResponse,
+        404,
+      );
+    }
 
     const hasProjectAccess = await supabaseService.validateProjectAccess(
       project_id,

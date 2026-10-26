@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canSend, shouldSubmitOnKey } from './chatComposer';
+import { canSend, isComposerBusy, shouldSubmitOnKey } from './chatComposer';
 
 const key = (overrides: Partial<Parameters<typeof shouldSubmitOnKey>[0]> = {}) => ({
   key: 'Enter',
@@ -52,5 +52,22 @@ describe('deciding when the send button is enabled', () => {
 
   it('accepts text when idle', () => {
     expect(canSend('hello', false)).toBe(true);
+  });
+});
+
+describe('deciding when the composer is busy', () => {
+  // A send during the first history load after a project switch was followed
+  // by the history reply replacing the list, then the send reply was added again.
+  it('is busy while the history loads, even with no answer pending', () => {
+    expect(isComposerBusy(false, true)).toBe(true);
+    expect(canSend('hello', isComposerBusy(false, true))).toBe(false);
+  });
+
+  it('is busy while an answer is pending', () => {
+    expect(isComposerBusy(true, false)).toBe(true);
+  });
+
+  it('is free when nothing is pending', () => {
+    expect(isComposerBusy(false, false)).toBe(false);
   });
 });

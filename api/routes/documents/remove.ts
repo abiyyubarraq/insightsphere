@@ -21,9 +21,13 @@ export async function deleteDocument(c: Context) {
 
   let document;
   try {
-    document = await supabaseService.getDocument(documentId, user.id);
-  } catch {
-    return c.json({ success: false, error: "Document not found" }, 404);
+    document = await supabaseService.findDocument(documentId, user.id);
+  } catch (error) {
+    console.error(`Could not read document ${documentId} for delete:`, error);
+    return c.json({ success: false, error: "Could not delete the document" }, 500);
+  }
+  if (!document) {
+    return c.json({ success: false, error: "Document not found." }, 404);
   }
 
   const removed = { vectors: false, storageObjects: 0 };

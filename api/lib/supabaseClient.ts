@@ -4,6 +4,7 @@ import {
   type SupabaseClient,
 } from "@supabase/supabase-js";
 import type { SuggestionDoc } from "./suggestions.ts";
+import { documentFromLookup } from "./documentAccess.ts";
 
 /**
  * Supabase Auth could not be reached or failed on its side, so nothing is known
@@ -151,38 +152,18 @@ export class SupabaseService {
     }
   }
 
-  /**
-   * Get document record by ID and validate ownership
-   */
-  async getDocument(
+  /** The user's own document, or null when it is missing, not theirs, or the id is malformed. */
+  async findDocument(
     documentId: string,
     userId: string
-  ): Promise<DocumentRecord> {
-    try {
-      const { data, error } = await this.client
-        .from("project_files")
-        .select("*")
-        .eq("id", documentId)
-        .eq("user_id", userId)
-        .single();
-
-      if (error) {
-        throw new Error(`Failed to fetch document: ${error.message}`);
-      }
-
-      if (!data) {
-        throw new Error("Document not found or access denied");
-      }
-
-      return data as DocumentRecord;
-    } catch (error) {
-      console.error("Document fetch failed:", error);
-      throw new Error(
-        `Failed to fetch document: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
+  ): Promise<DocumentRecord | null> {
+    const result = await this.client
+      .from("project_files")
+      .select("*")
+      .eq("id", documentId)
+      .eq("user_id", userId)
+      .maybeSingle<DocumentRecord>();
+    return documentFromLookup(result, userId);
   }
 
   /**
