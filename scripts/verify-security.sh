@@ -178,6 +178,54 @@ conversation_check() {
 }
 conversation_check
 
+echo "== process and summary with another project_id must fail =="
+# One throwaway user with two projects. The document row points at a file that
+# does not exist: the API answers 404 before the download, so nothing runs.
+usage_total() {
+  curl -s "$URL/rest/v1/usage_counters?select=count&user_id=eq.$1" \
+    -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE" \
+    | grep -o '"count":[0-9]*' | cut -d: -f2 | awk '{ t += $1 } END { print t + 0 }'
+}
+doc_status() {
+  curl -s "$URL/rest/v1/project_files?select=status&id=eq.$1" \
+    -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE" | grep -o '"status":"[^"]*"'
+}
+document_as() {
+  curl -s -o /dev/null -w '%{http_code}' -X POST "$API/v1/documents/$1" \
+    -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
+    -d '{"document_id":"'"$3"'","project_id":"'"$4"'"}'
+}
+
+document_check() {
+  [ -n "$SERVICE" ] || { bad "SUPABASE_SERVICE_ROLE_KEY missing from $ENV_FILE"; return; }
+  make_user || { bad "could not create and sign in a ship-test- user"; return; }
+  local u_id=$made_id u_token=$made_token
+  local p1 p2 doc
+  p1=$(service_insert projects '{"name":"ship-test-1","user_id":"'"$u_id"'"}')
+  p2=$(service_insert projects '{"name":"ship-test-2","user_id":"'"$u_id"'"}')
+  if [ -n "$p1" ]; then
+    doc=$(service_insert project_files '{"project_id":"'"$p1"'","user_id":"'"$u_id"'",
+      "file_name":"ship-test.txt","storage_path":"'"$u_id/$p1"'/ship-test.txt",
+      "file_id":"ship-test","status":"ready"}')
+  fi
+  if [ -z "$p1" ] || [ -z "$p2" ] || [ -z "$doc" ]; then
+    bad "could not create the test projects and document"; return
+  fi
+
+  local before s endpoint
+  before=$(usage_total "$u_id")
+  for endpoint in process generateSummary; do
+    s=$(document_as "$endpoint" "$u_token" "$doc" "$p2")
+    [ "$s" = "404" ] && ok "$endpoint with the user's other project -> 404" \
+                     || bad "$endpoint with the user's other project -> $s (expected 404)"
+  done
+  [ "$(doc_status "$doc")" = '"status":"ready"' ] && ok "document status unchanged (ready)" \
+                                                   || bad "document status changed: $(doc_status "$doc")"
+  [ "$(usage_total "$u_id")" = "$before" ] && ok "no quota charged" \
+                                          || bad "quota changed: $before -> $(usage_total "$u_id")"
+}
+document_check
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

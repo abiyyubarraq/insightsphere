@@ -14,6 +14,7 @@ import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
+import { documentInProject } from "../../lib/documentAccess.ts";
 import {
   chargeUserQuota,
   quotaExceeded,
@@ -79,6 +80,17 @@ export async function processDocument(c: Context) {
           error: "Access denied to project",
         } as DocumentProcessResponse,
         403,
+      );
+    }
+
+    // Before the claim and the quota charge, so a refused request changes nothing.
+    if (documentInProject(document, user.id, project_id) === "not_found") {
+      return c.json(
+        {
+          success: false,
+          error: "Document not found in this project.",
+        } as DocumentProcessResponse,
+        404,
       );
     }
 

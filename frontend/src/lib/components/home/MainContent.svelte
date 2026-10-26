@@ -24,6 +24,7 @@
   import ChatMarkdown from './ChatMarkdown.svelte';
   import { canSend, shouldSubmitOnKey } from '$lib/chatComposer';
   import { applyOlderPage } from '$lib/chatHistory';
+  import { emptyChatState, needsChatReset } from '$lib/chatState';
   import { isStillCurrent } from '$lib/staleResponse';
   import { readSuggestions, suggestionsKey, type SuggestionsView } from '$lib/suggestions';
 
@@ -70,6 +71,9 @@
   let messagesContainer: HTMLDivElement | undefined = $state();
   let loadingHistory = $state(false);
   let loadedProjectId: string | undefined = $state(undefined);
+  // The project the messages, conversationId and hasMore on screen belong to.
+  // Set on every switch; loadedProjectId is set only when the history load works.
+  let chatProjectId: string | undefined = $state(undefined);
   let visibleCitations: Record<string, number> = $state({});
   let showClearConfirmDialog = $state(false);
   let clearLoading = $state(false);
@@ -191,17 +195,19 @@
   // Load conversation history when project changes
   $effect(() => {
     if ($selectedProject?.id) {
-      if (loadedProjectId !== $selectedProject.id) {
+      if (needsChatReset(untrack(() => chatProjectId), $selectedProject.id)) {
         // An answer for the previous project must not land in this one.
         cancelPendingAnswer();
         untrack(resetPaging);
+        ({ messages: chatMessages, conversationId, hasMore } = emptyChatState());
+        chatProjectId = $selectedProject.id;
         loadConversationHistory();
       }
     } else {
       cancelPendingAnswer();
       untrack(resetPaging);
-      chatMessages = [];
-      conversationId = undefined;
+      ({ messages: chatMessages, conversationId, hasMore } = emptyChatState());
+      chatProjectId = undefined;
       chatError = '';
       loadedProjectId = undefined;
       loadingHistory = false;
