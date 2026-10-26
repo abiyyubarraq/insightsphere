@@ -1,6 +1,14 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import OpenAI from "openai";
 import { normalizeForEmbedding } from "./chunkText.ts";
+import { OpenAIRequestError } from "./openaiErrors.ts";
+
+// Logs only status and code. The SDK error itself can print part of the key.
+function fail(label: string, action: string, error: unknown): never {
+  const failure = new OpenAIRequestError(action, error);
+  console.error(label, { status: failure.status, code: failure.code });
+  throw failure;
+}
 
 export interface EmbeddingRequest {
   text: string;
@@ -94,12 +102,7 @@ export class OpenAIClient {
         },
       };
     } catch (error) {
-      console.error("OpenAI embedding generation failed:", error);
-      throw new Error(
-        `Failed to generate embedding: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      fail("OpenAI embedding generation failed:", "Failed to generate embedding", error);
     }
   }
 
@@ -155,11 +158,10 @@ export class OpenAIClient {
       console.log(`✅ Completed all ${totalBatches} batches`);
       return allResults;
     } catch (error) {
-      console.error("OpenAI batch embedding generation failed:", error);
-      throw new Error(
-        `Failed to generate batch embeddings: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
+      fail(
+        "OpenAI batch embedding generation failed:",
+        "Failed to generate batch embeddings",
+        error,
       );
     }
   }
@@ -214,11 +216,10 @@ export class OpenAIClient {
         model: request.model || "gpt-4o-mini",
       };
     } catch (error) {
-      console.error("OpenAI chat completion generation failed:", error);
-      throw new Error(
-        `Failed to generate chat completion: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
+      fail(
+        "OpenAI chat completion generation failed:",
+        "Failed to generate chat completion",
+        error,
       );
     }
   }
@@ -227,12 +228,7 @@ export class OpenAIClient {
     try {
       await this.client.files.del(fileId);
     } catch (error) {
-      console.error("File deletion failed:", error);
-      throw new Error(
-        `Failed to delete file: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      fail("File deletion failed:", "Failed to delete file", error);
     }
   }
 
@@ -253,12 +249,7 @@ export class OpenAIClient {
       });
       return response.id;
     } catch (error) {
-      console.error("File upload failed:", error);
-      throw new Error(
-        `Failed to upload file to OpenAI: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      fail("File upload failed:", "Failed to upload file to OpenAI", error);
     }
   }
 
@@ -279,5 +270,5 @@ export class OpenAIClient {
   }
 }
 
-// Export singleton instance
+/** The server's own key. Requests made for a user get theirs from openAIForUser. */
 export const openaiClient = new OpenAIClient();

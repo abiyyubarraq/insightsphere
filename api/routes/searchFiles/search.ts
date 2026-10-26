@@ -8,6 +8,8 @@ import { currentUser } from "../../lib/auth.ts";
 import type { ListFilesResponse } from "../../../shared/types/index.ts";
 import { handleSemanticSearch } from "./semanticSearch.ts";
 import { handleFilenameSearch } from "./fileNameSearch.ts";
+import { keyFailureResponse } from "../../lib/openaiErrors.ts";
+import { openAIForUser } from "../../lib/userOpenAI.ts";
 
 export interface ListFilesRequest {
   limit?: number;
@@ -31,6 +33,7 @@ export type FileQueryResult = {
  * Main endpoint handler
  */
 export async function searchFiles(c: Context) {
+  let own = false;
   try {
     // Only accept POST method
     if (c.req.method !== "POST") {
@@ -55,14 +58,17 @@ export async function searchFiles(c: Context) {
     let result: ListFilesResponse;
 
     switch (searchMode) {
-      case "semantic":
-        result = await handleSemanticSearch(user.id, {
+      case "semantic": {
+        const openai = await openAIForUser(user.id);
+        own = openai.own;
+        result = await handleSemanticSearch(user.id, openai.client, {
           limit,
           offset,
           searchQuery: searchQuery.trim() || undefined,
           projectIds: projectIds.length > 0 ? projectIds : undefined,
         });
         break;
+      }
 
       case "filename":
       default:
@@ -78,6 +84,8 @@ export async function searchFiles(c: Context) {
     return c.json(result);
   } catch (error) {
     console.error("File listing failed:", error);
+    const keyFailure = keyFailureResponse(c, own, error);
+    if (keyFailure) return keyFailure;
 
     if (error instanceof Error && error.message.includes("Access denied")) {
       return c.json({ error: error.message }, 403);

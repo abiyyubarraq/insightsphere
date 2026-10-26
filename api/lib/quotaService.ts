@@ -7,6 +7,7 @@ import {
   type QuotaRow,
   toQuotaResult,
 } from "./quota.ts";
+import { chargeQuota, type QuotaCharge } from "./quotaGate.ts";
 
 export class QuotaUnavailableError extends Error {
   constructor(cause: string) {
@@ -44,6 +45,11 @@ export async function consumeQuota(
     );
   }
   return result;
+}
+
+/** consumeQuota for a user on the server key; allowed at once for an own key. */
+export function chargeUserQuota(charge: QuotaCharge) {
+  return chargeQuota({ consume: consumeQuota }, charge);
 }
 
 export function quotaExceeded(c: Context, kind: QuotaKind, limit: number | null) {

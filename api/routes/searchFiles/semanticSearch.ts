@@ -4,7 +4,8 @@ import {
 } from "../../../shared/types/index.ts";
 import { FileQueryResult, ListFilesRequest } from "./search.ts";
 import { qdrantService } from "../../lib/qdrantClient.ts";
-import { openaiClient } from "../../lib/openaiClient.ts";
+import type { OpenAIClient } from "../../lib/openaiClient.ts";
+import { OpenAIRequestError } from "../../lib/openaiErrors.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { formatFileData } from "./helpers.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
@@ -14,6 +15,7 @@ import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
  */
 export async function handleSemanticSearch(
   userId: string,
+  client: Pick<OpenAIClient, "generateEmbedding">,
   request: ListFilesRequest
 ): Promise<ListFilesResponse> {
   const {
@@ -47,12 +49,14 @@ export async function handleSemanticSearch(
   let queryEmbedding: number[] = [];
   try {
     console.log("🤖 Generating embedding for semantic search...");
-    const embedding = await openaiClient.generateEmbedding({
+    const embedding = await client.generateEmbedding({
       text: searchQuery,
     });
     queryEmbedding = embedding.embedding;
-  } catch (_error) {
+  } catch (error) {
     console.error("Failed to generate embedding");
+    // Kept whole so the route can answer a rejected own key with 400 or 429.
+    if (error instanceof OpenAIRequestError) throw error;
     throw new Error("Failed to generate embedding for semantic search");
   }
 

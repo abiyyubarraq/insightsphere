@@ -3,11 +3,13 @@
  * Handles: Query contextualisation → embedding → vector search → context building → LLM generation
  */
 
-import { qdrantService } from "./qdrantClient.ts";
+import { qdrantService, type QdrantService } from "./qdrantClient.ts";
 import { SEARCH_DEFAULTS } from "./constants.ts";
-import { llmClient, type LLMResponse } from "./llmClient.ts";
+import { LLMClientFactory, type LLMResponse } from "./llmClient.ts";
 import { type Citation, citationService } from "./citationService.ts";
-import { openaiClient } from "./openaiClient.ts";
+import type { OpenAIClient } from "./openaiClient.ts";
+import { OpenAIRequestError, userKeyFailure } from "./openaiErrors.ts";
+import type { ChosenClient } from "./openaiForUser.ts";
 import {
   type CompleteRewrite,
   contextualiseQuery,
@@ -61,7 +63,24 @@ export interface RAGQueryResult {
   };
 }
 
+export type RAGOpenAI = Pick<
+  OpenAIClient,
+  "generateEmbedding" | "generateChatCompletion"
+>;
+
+type SearchSimilar = QdrantService["searchSimilar"];
+
+/**
+ * One instance serves every request, so the OpenAI client is a parameter of
+ * each call and never stored on the instance. Stored, two requests at the same
+ * time could swap keys and one user's key would pay for another's question.
+ */
 export class RAGService {
+  constructor(
+    private readonly searchSimilar: SearchSimilar = (vector, options) =>
+      qdrantService.searchSimilar(vector, options),
+  ) {}
+
   /**
    * Main RAG query processing pipeline
    */
@@ -69,8 +88,10 @@ export class RAGService {
     projectId: string,
     userId: string,
     query: string,
+    openai: ChosenClient<RAGOpenAI>,
     options: RAGQueryOptions = {},
   ): Promise<RAGQueryResult> {
+    const { client, own } = openai;
     const startTime = Date.now();
     console.log(`🔍 Starting RAG query for project: ${projectId}`);
     console.log(`❓ Query: "${query}"`);
@@ -90,7 +111,7 @@ export class RAGService {
       const { searchQuery, rewritten } = await contextualiseQuery(
         query,
         conversation_turns,
-        this.completeRewrite,
+        this.rewriteWith(client),
       );
 
       // Logged as a pair on purpose: the effect of a rewrite can only be judged
@@ -106,6 +127,7 @@ export class RAGService {
       // Step 2: Embed whichever queries we are searching with
       const queries = rewritten ? [query, searchQuery] : [query];
       const { embeddings, embeddingModel } = await this.generateQueryEmbeddings(
+        client,
         queries,
       );
 
@@ -121,7 +143,7 @@ export class RAGService {
 
       const lists = await Promise.all(
         embeddings.map((queryEmbedding) =>
-          qdrantService.searchSimilar(queryEmbedding, {
+          this.searchSimilar(queryEmbedding, {
             userId,
             projectId,
             useProjectCollection: true,
@@ -187,6 +209,8 @@ export class RAGService {
       }
 
       const llmResponse = await this.generateLLMResponse(
+        client,
+        own,
         ragContext.formatted_context,
         query,
         {
@@ -219,6 +243,7 @@ export class RAGService {
       };
     } catch (error) {
       console.error("RAG query failed:", error);
+      if (error instanceof OpenAIRequestError) throw error;
       throw new Error(
         `RAG query failed: ${
           error instanceof Error ? error.message : "Unknown error"
@@ -230,24 +255,29 @@ export class RAGService {
   /**
    * The rewrite runs on the cheap model at temperature 0. It is passed into
    * contextualiseQuery rather than imported by it, so that module stays free of
-   * the OpenAI singleton and can be tested.
+   * any OpenAI client and can be tested.
    */
-  private completeRewrite: CompleteRewrite = async (messages, signal) => {
-    const result = await openaiClient.generateChatCompletion({
-      model: REWRITE_MODEL,
-      messages,
-      max_tokens: REWRITE_MAX_TOKENS,
-      temperature: 0,
-      signal,
-    });
-    return result.answer;
-  };
+  private rewriteWith(client: RAGOpenAI): CompleteRewrite {
+    return async (messages, signal) => {
+      const result = await client.generateChatCompletion({
+        model: REWRITE_MODEL,
+        messages,
+        max_tokens: REWRITE_MAX_TOKENS,
+        temperature: 0,
+        signal,
+      });
+      return result.answer;
+    };
+  }
 
   /**
    * Generate embeddings for the queries using same model as documents
    * CRITICAL: Must use the same embedding model and dimensions as document processing
    */
-  private async generateQueryEmbeddings(queries: string[]): Promise<{
+  private async generateQueryEmbeddings(
+    client: RAGOpenAI,
+    queries: string[],
+  ): Promise<{
     embeddings: number[][];
     embeddingModel: string;
   }> {
@@ -260,7 +290,7 @@ export class RAGService {
 
       const embeddings = await Promise.all(
         queries.map(async (text) => {
-          const embedding = await openaiClient.generateEmbedding({
+          const embedding = await client.generateEmbedding({
             text,
             model: "text-embedding-3-small", // Must match document processing
           });
@@ -275,6 +305,7 @@ export class RAGService {
       return { embeddings, embeddingModel: "text-embedding-3-small" };
     } catch (openaiError) {
       console.error("❌ OpenAI embedding failed:", openaiError);
+      if (openaiError instanceof OpenAIRequestError) throw openaiError;
 
       throw new Error(
         `OpenAI embedding failed and fallback would create dimension mismatch. ` +
@@ -291,14 +322,24 @@ export class RAGService {
    * Generate LLM response using context and query
    */
   private async generateLLMResponse(
+    client: RAGOpenAI,
+    own: boolean,
     context: string,
     query: string,
     options: { conversationHistory?: string; lowConfidence?: boolean },
   ): Promise<LLMResponse> {
     try {
-      return await llmClient.generateAnswer(context, query, options);
+      return await LLMClientFactory.create(client).generateAnswer(
+        context,
+        query,
+        options,
+      );
     } catch (error) {
       console.error("LLM generation failed:", error);
+
+      // An apology would hide a rejected or empty own key behind a 200. The
+      // user has to see it, so it goes up to the route instead.
+      if (own && userKeyFailure(error)) throw error;
 
       // Enhanced fallback response with context summary
       const contextPreview = context.length > 200

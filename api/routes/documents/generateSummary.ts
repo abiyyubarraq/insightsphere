@@ -4,11 +4,17 @@ import {
   DocumentProcessResponse,
 } from "../../../shared/types/index.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
-import { ChatCompletionRequest, openaiClient } from "../../lib/openaiClient.ts";
+import type {
+  ChatCompletionRequest,
+  OpenAIClient,
+} from "../../lib/openaiClient.ts";
+import { keyFailureResponse } from "../../lib/openaiErrors.ts";
+import type { ChosenClient } from "../../lib/openaiForUser.ts";
+import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { MAX_FILE_BYTES } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
 import {
-  consumeQuota,
+  chargeUserQuota,
   quotaExceeded,
   QuotaUnavailableError,
   quotaUnavailable,
@@ -18,6 +24,9 @@ export async function generateSummary(c: Context) {
   const startTime = Date.now();
   let tempFilePath: string | null = null;
   let uploadResponseId: string | null = null;
+  // Declared here so the catch below deletes the uploaded file with the same
+  // key that uploaded it.
+  let openai: ChosenClient<OpenAIClient> | null = null;
   try {
     const user = currentUser(c);
     const body = await c.req.json();
@@ -64,10 +73,17 @@ export async function generateSummary(c: Context) {
       );
     }
 
+    openai = await openAIForUser(user.id);
+    const { client } = openai;
+
     // Charged before the download, so a caller over the limit cannot make the
     // API pull a large file again and again. The size check below then costs a
     // credit, but only a caller who skipped the browser's own check reaches it.
-    const quota = await consumeQuota(user.id, "summaries");
+    const quota = await chargeUserQuota({
+      own: openai.own,
+      userId: user.id,
+      kind: "summaries",
+    });
     if (!quota.allowed) return quotaExceeded(c, "summaries", quota.limit);
 
     console.log(`Downloading file: ${document.storage_path}`);
@@ -109,7 +125,7 @@ export async function generateSummary(c: Context) {
 
     try {
       console.log(`Uploading file to OpenAI: ${tempFilePath}`);
-      uploadResponseId = await openaiClient.uploadFile(tempFilePath);
+      uploadResponseId = await client.uploadFile(tempFilePath);
       console.log(`File uploaded to OpenAI with ID: ${uploadResponseId}`);
       const request: ChatCompletionRequest = {
         model: "gpt-4o-mini",
@@ -169,13 +185,13 @@ export async function generateSummary(c: Context) {
         temperature: 0.1,
         top_p: 0.95,
       };
-      const result = await openaiClient.generateChatCompletion(request);
+      const result = await client.generateChatCompletion(request);
       await supabaseService.updateDocument(document_id, {
         summary: result.answer,
         is_summary_exist: true,
       });
       if (uploadResponseId) {
-        await openaiClient.deleteFile(uploadResponseId);
+        await client.deleteFile(uploadResponseId);
         uploadResponseId = null;
       }
       if (tempFilePath) {
@@ -184,14 +200,7 @@ export async function generateSummary(c: Context) {
       }
     } catch (openaiError) {
       console.error("❌ OpenAI summary generation failed:", openaiError);
-
-      throw new Error(
-        `OpenAI summary generation failed. ` +
-          `Please ensure OpenAI API key is configured correctly. ` +
-          `Error: ${
-            openaiError instanceof Error ? openaiError.message : "Unknown error"
-          }`
-      );
+      throw openaiError;
     }
 
     const processingTime = Date.now() - startTime;
@@ -219,14 +228,17 @@ export async function generateSummary(c: Context) {
         console.warn("Failed to cleanup temp file:", cleanupError);
       }
     }
-    if (uploadResponseId) {
+    if (uploadResponseId && openai) {
       try {
-        await openaiClient.deleteFile(uploadResponseId);
+        await openai.client.deleteFile(uploadResponseId);
         uploadResponseId = null;
       } catch (deleteError) {
         console.warn("Failed to delete file:", deleteError);
       }
     }
+
+    const keyFailure = keyFailureResponse(c, openai?.own ?? false, error);
+    if (keyFailure) return keyFailure;
 
     const processingTime = Date.now() - startTime;
     const errorMessage =

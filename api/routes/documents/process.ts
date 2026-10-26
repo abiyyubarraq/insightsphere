@@ -7,12 +7,15 @@ import {
   type DocumentRecord,
   supabaseService,
 } from "../../lib/supabaseClient.ts";
-import { openaiClient } from "../../lib/openaiClient.ts";
+import type { OpenAIClient } from "../../lib/openaiClient.ts";
+import { failureText, OpenAIRequestError } from "../../lib/openaiErrors.ts";
+import type { ChosenClient } from "../../lib/openaiForUser.ts";
+import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
 import {
-  consumeQuota,
+  chargeUserQuota,
   quotaExceeded,
   QuotaUnavailableError,
   quotaUnavailable,
@@ -79,6 +82,10 @@ export async function processDocument(c: Context) {
       );
     }
 
+    // Read once, here, and handed to the pipeline. Deleting the key while a
+    // document is being processed does not change the run already started.
+    const openai = await openAIForUser(user.id);
+
     if (!await supabaseService.claimForProcessing(document_id)) {
       return c.json(
         {
@@ -94,7 +101,11 @@ export async function processDocument(c: Context) {
     // gets the 409 above instead of spending a document.
     let quota;
     try {
-      quota = await consumeQuota(user.id, "documents");
+      quota = await chargeUserQuota({
+        own: openai.own,
+        userId: user.id,
+        kind: "documents",
+      });
     } catch (error) {
       await releaseClaim(document);
       throw error;
@@ -109,7 +120,7 @@ export async function processDocument(c: Context) {
     // other way to learn the outcome, so a timeout left the row stuck in
     // "processing" with no route back. The client now polls the document's
     // status instead.
-    runPipeline(document_id, project_id, user.id, document).catch((error) => {
+    runPipeline(document_id, project_id, user.id, document, openai).catch((error) => {
       console.error(`Pipeline crashed for ${document_id}:`, error);
     });
 
@@ -156,6 +167,7 @@ async function runPipeline(
   project_id: string,
   userId: string,
   document: DocumentRecord,
+  openai: ChosenClient<OpenAIClient>,
 ): Promise<void> {
   const startTime = Date.now();
   let tempFilePath: string | null = null;
@@ -238,7 +250,12 @@ async function runPipeline(
     // for, and a refund path is a second place for the counter to drift.
     const pageCount = parseResult.pages?.length ?? 0;
     if (pageCount > 0) {
-      const pages = await consumeQuota(userId, "pages", pageCount);
+      const pages = await chargeUserQuota({
+        own: openai.own,
+        userId,
+        kind: "pages",
+        amount: pageCount,
+      });
       if (!pages.allowed) {
         throw new Error(quotaMessage("pages", pages.limit));
       }
@@ -388,7 +405,7 @@ async function runPipeline(
       // Step 3: Generate embeddings for this batch
       let embeddings;
       try {
-        embeddings = await openaiClient.generateBatchEmbeddings(
+        embeddings = await openai.client.generateBatchEmbeddings(
           textChunks.map((chunk) => chunk.content),
           "text-embedding-3-small"
         );
@@ -399,6 +416,7 @@ async function runPipeline(
         console.log(`  🧠 Generated ${embeddings.length} embeddings`);
       } catch (openaiError) {
         console.error("❌ OpenAI embeddings failed:", openaiError);
+        if (openaiError instanceof OpenAIRequestError) throw openaiError;
         throw new Error(
           `OpenAI embedding generation failed for page ${pageNumber}. ` +
             `Error: ${
@@ -514,9 +532,7 @@ async function runPipeline(
 
     await supabaseService.updateDocument(document_id, {
       status: "failed",
-      processing_error: error instanceof Error
-        ? error.message
-        : "Unknown error",
+      processing_error: failureText(error, openai.own),
     }).catch((e) => console.error("Could not record failure:", e));
   }
 }

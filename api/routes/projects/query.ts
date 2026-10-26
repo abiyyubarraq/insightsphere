@@ -9,11 +9,13 @@ import { supabaseService } from "../../lib/supabaseClient.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
 import {
-  consumeQuota,
+  chargeUserQuota,
   quotaExceeded,
   QuotaUnavailableError,
   quotaUnavailable,
 } from "../../lib/quotaService.ts";
+import { keyFailureResponse } from "../../lib/openaiErrors.ts";
+import { openAIForUser } from "../../lib/userOpenAI.ts";
 
 interface QueryRequest {
   query: string;
@@ -45,6 +47,7 @@ interface QueryResponse {
 }
 
 export async function queryProject(c: Context) {
+  let own = false;
   try {
     const startTime = Date.now();
     const user = currentUser(c);
@@ -84,9 +87,12 @@ export async function queryProject(c: Context) {
       );
     }
 
+    const openai = await openAIForUser(user.id);
+    own = openai.own;
+
     // The same answer as a chat message at the same cost, so it draws on the
     // same budget. Otherwise this route is a way around the chat limit.
-    const quota = await consumeQuota(user.id, "chat");
+    const quota = await chargeUserQuota({ own, userId: user.id, kind: "chat" });
     if (!quota.allowed) return quotaExceeded(c, "chat", quota.limit);
 
     console.log(`👤 User: ${user.id} querying project: ${projectId}`);
@@ -107,6 +113,7 @@ export async function queryProject(c: Context) {
       projectId,
       user.id,
       query,
+      openai,
       queryOptions,
     );
 
@@ -138,6 +145,8 @@ export async function queryProject(c: Context) {
       return quotaUnavailable(c);
     }
     console.error("RAG query endpoint failed:", error);
+    const keyFailure = keyFailureResponse(c, own, error);
+    if (keyFailure) return keyFailure;
 
     return c.json({
       success: false,
