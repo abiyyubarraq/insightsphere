@@ -14,7 +14,7 @@ import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
-import { documentInProject } from "../../lib/documentAccess.ts";
+import { documentInProject, projectIdShape } from "../../lib/documentAccess.ts";
 import {
   chargeUserQuota,
   quotaExceeded,
@@ -74,6 +74,16 @@ export async function processDocument(c: Context) {
         {
           success: false,
           error: "Document not found.",
+        } as DocumentProcessResponse,
+        404,
+      );
+    }
+
+    if (projectIdShape(project_id) === "not_found") {
+      return c.json(
+        {
+          success: false,
+          error: "Document not found in this project.",
         } as DocumentProcessResponse,
         404,
       );

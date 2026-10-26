@@ -82,6 +82,9 @@
   let clearLoading = $state(false);
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let hasMessages = $derived(chatMessages.length > 0);
+  // While history loads the composer stays at the bottom, so it is not centred
+  // and then moved when the messages arrive.
+  let showEmptyChat = $derived(!hasMessages && !loadingHistory);
   let hasMore = $state(false);
   let loadingOlder = $state(false);
 
@@ -604,305 +607,307 @@
         {/if}
 
         {#if loadingHistory}
-          <div class="flex flex-1 justify-center items-center">
-            <span class="loading loading-spinner loading-lg text-primary"></span>
+          <div
+            class="flex min-h-0 flex-1 items-center justify-center"
+            role="status"
+            data-testid="history-loading"
+          >
+            <span class="loading loading-spinner loading-sm text-base-content/40" aria-hidden="true"
+            ></span>
+            <span class="sr-only">Loading chat</span>
           </div>
-        {:else}
-          {#if hasMessages}
-            <!-- Chat Messages Area -->
-            <!-- Gutter on both edges keeps the column centred in the window when a scrollbar shows. -->
-            <!-- overflow-anchor off: the browser's own scroll anchoring would
+        {:else if hasMessages}
+          <!-- Chat Messages Area -->
+          <!-- Gutter on both edges keeps the column centred in the window when a scrollbar shows. -->
+          <!-- overflow-anchor off: the browser's own scroll anchoring would
                  add to the manual fix in loadOlderMessages and jump twice. -->
-            <div
-              class="flex-1 overflow-y-auto min-h-0 py-6 [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
-              bind:this={messagesContainer}
-            >
-              <div class="mx-auto w-full max-w-3xl space-y-8 px-4">
-                <!-- After a send in the failed state: the older messages are still missing. -->
-                {#if historyFailed}
-                  <div class="border-b border-base-content/10 pb-6">
-                    {@render historyError()}
-                  </div>
-                {/if}
-                {#if hasMore}
-                  <div class="flex justify-center">
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-sm gap-2 font-normal text-base-content/70"
-                      onclick={loadOlderMessages}
-                      disabled={loadingOlder}
-                    >
-                      {#if loadingOlder}
-                        <span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
-                      {/if}
-                      Load older messages
-                    </button>
-                  </div>
-                {/if}
-                {#each chatMessages as message (message.id)}
-                  <div
-                    class="flex flex-col {message.role === 'user' ? 'items-end' : 'items-start'}"
-                  >
-                    <div
-                      class={message.role === 'user'
-                        ? 'max-w-[85%] rounded-box border border-base-content/10 bg-base-200 px-4 py-2.5'
-                        : 'w-full text-base-content/90'}
-                    >
-                      {#if message.content}
-                        {#if message.role === 'assistant'}
-                          <!-- Render markdown for assistant messages -->
-                          <ChatMarkdown
-                            content={message.content}
-                            messageId={message.id}
-                            citationCount={message.citations?.length ?? 0}
-                            oncitation={handleCitationClick}
-                          />
-                        {:else}
-                          <!-- Keep user messages as plain text -->
-                          <div class="whitespace-pre-wrap">{message.content}</div>
-                        {/if}
-                      {:else}
-                        <span class="loading loading-dots loading-sm"></span>
-                      {/if}
-
-                      <!-- The API decides what counts as weak, so the floor
-                         lives in one place and history keeps the flag. -->
-                      {#if message.role === 'assistant' && message.metadata?.low_confidence && message.citations?.length}
-                        <div class="mt-3 flex items-start gap-2 text-xs text-warning">
-                          <TriangleAlert class="w-4 h-4 shrink-0" />
-                          <span>
-                            Weak match. The documents may not cover this question, so check the
-                            sources before relying on this answer.
-                          </span>
-                        </div>
-                      {/if}
-
-                      <!-- Citations for assistant messages -->
-                      {#if message.role === 'assistant' && message.citations && message.citations.length > 0}
-                        <div class="mt-4 pt-3 border-t border-base-content/10">
-                          <div class="text-xs font-medium mb-2 text-base-content/60">
-                            Sources ({message.citations.length}):
-                          </div>
-                          <div class="space-y-2">
-                            {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
-                              <div
-                                id="citation-{message.id}-{index}"
-                                class="flex items-start gap-2 text-xs transition-all duration-300"
-                              >
-                                <div class="flex-1">
-                                  <div class="font-medium">
-                                    <span
-                                      class="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-primary text-primary-content rounded-full mr-1"
-                                    >
-                                      {index + 1}
-                                    </span>
-                                    <button
-                                      class="text-left hover:text-primary hover:underline transition-colors cursor-pointer"
-                                      onclick={() => handleFilenameClick(citation.file_name)}
-                                      title="Click to find this file in the documents sidebar"
-                                    >
-                                      {citation.file_name}
-                                    </button>
-                                  </div>
-                                  {#if citation.page_number}
-                                    <div class="text-base-content/70">
-                                      Page {citation.page_number}
-                                    </div>
-                                  {/if}
-                                  <div class="text-base-content/60 mt-1 line-clamp-2">
-                                    {citation.text_snippet}
-                                  </div>
-                                  <div class="text-base-content/60 mt-1">
-                                    Relevance: {(citation.similarity_score * 100).toFixed(0)}%
-                                  </div>
-                                </div>
-                              </div>
-                            {/each}
-                            {#if getVisibleCitationsCount(message.id, message.citations.length) < message.citations.length}
-                              <button
-                                class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
-                                onclick={() => showMoreCitations(message.id)}
-                              >
-                                <span
-                                  >Show {Math.min(
-                                    3,
-                                    message.citations.length -
-                                      getVisibleCitationsCount(message.id, message.citations.length)
-                                  )} more</span
-                                >
-                                <svg
-                                  class="w-3 h-3"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M19 9l-7 7-7-7"
-                                  ></path>
-                                </svg>
-                              </button>
-                            {:else if getVisibleCitationsCount(message.id, message.citations.length) > 3}
-                              <button
-                                class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
-                                onclick={() => showLessCitations(message.id)}
-                              >
-                                <span>Show less</span>
-                                <svg
-                                  class="w-3 h-3"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    stroke-width="2"
-                                    d="M5 15l7-7 7 7"
-                                  ></path>
-                                </svg>
-                              </button>
-                            {/if}
-                          </div>
-                        </div>
-                      {/if}
-
-                      <!-- Metadata for assistant messages -->
-                      {#if message.role === 'assistant' && message.metadata}
-                        <div class="mt-2 text-xs text-base-content/60">
-                          {#if message.metadata.processing_time_ms}
-                            {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
-                          {/if}
-                          {#if message.metadata.llm_model}
-                            • {message.metadata.llm_model}
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                    <div class="mt-1 text-xs text-base-content/60">
-                      {new Date(message.created_at).toLocaleTimeString()}
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-          {/if}
-
-          <!-- One composer for both layouts, so the draft and focus survive the move. -->
-          <div class="pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
-            <div class="mx-auto w-full max-w-3xl px-4">
-              {#if !hasMessages && historyFailed}
-                <div class="mb-6">
+          <div
+            class="flex-1 overflow-y-auto min-h-0 py-6 [overflow-anchor:none] [scrollbar-gutter:stable_both-edges]"
+            bind:this={messagesContainer}
+          >
+            <div class="mx-auto w-full max-w-3xl space-y-8 px-4">
+              <!-- After a send in the failed state: the older messages are still missing. -->
+              {#if historyFailed}
+                <div class="border-b border-base-content/10 pb-6">
                   {@render historyError()}
                 </div>
-              {:else if !hasMessages}
-                <div class="mb-6 px-1">
-                  <h2 class="text-2xl font-medium text-balance">What do you want to know?</h2>
-                  <p class="mt-2 text-sm text-base-content/60">
-                    Answers come from the documents in
-                    <span class="text-base-content/80">{$selectedProject.name}</span>.
-                  </p>
+              {/if}
+              {#if hasMore}
+                <div class="flex justify-center">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-sm gap-2 font-normal text-base-content/70"
+                    onclick={loadOlderMessages}
+                    disabled={loadingOlder}
+                  >
+                    {#if loadingOlder}
+                      <span class="loading loading-spinner loading-xs" aria-hidden="true"></span>
+                    {/if}
+                    Load older messages
+                  </button>
                 </div>
               {/if}
+              {#each chatMessages as message (message.id)}
+                <div class="flex flex-col {message.role === 'user' ? 'items-end' : 'items-start'}">
+                  <div
+                    class={message.role === 'user'
+                      ? 'max-w-[85%] rounded-box border border-base-content/10 bg-base-200 px-4 py-2.5'
+                      : 'w-full text-base-content/90'}
+                  >
+                    {#if message.content}
+                      {#if message.role === 'assistant'}
+                        <!-- Render markdown for assistant messages -->
+                        <ChatMarkdown
+                          content={message.content}
+                          messageId={message.id}
+                          citationCount={message.citations?.length ?? 0}
+                          oncitation={handleCitationClick}
+                        />
+                      {:else}
+                        <!-- Keep user messages as plain text -->
+                        <div class="whitespace-pre-wrap">{message.content}</div>
+                      {/if}
+                    {:else}
+                      <span class="loading loading-dots loading-sm"></span>
+                    {/if}
 
-              <div
-                class="rounded-2xl border border-base-content/15 bg-base-200 px-3 pt-3 pb-2 transition-colors focus-within:border-base-content/40 focus-within:ring-2 focus-within:ring-primary/40"
-              >
-                <label for="chat-input" class="sr-only">Message</label>
-                <textarea
-                  id="chat-input"
-                  bind:this={textareaEl}
-                  bind:value={userInput}
-                  onkeydown={handleKeyDown}
-                  placeholder="Ask about your documents…"
-                  rows="1"
-                  class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/50"
-                ></textarea>
-                <div class="mt-2 flex justify-end">
-                  {#if chatLoading}
-                    <button
-                      type="button"
-                      class="btn btn-circle btn-sm btn-neutral"
-                      onclick={handleStop}
-                      aria-label="Stop"
-                      title="Stop waiting for the answer"
-                    >
-                      <Square class="w-4 h-4" fill="currentColor" />
-                    </button>
-                  {:else}
-                    <button
-                      type="button"
-                      class="btn btn-circle btn-sm btn-primary"
-                      onclick={sendComposerInput}
-                      disabled={!canSend(userInput, loadingHistory)}
-                      aria-label="Send message"
-                    >
-                      <ArrowUp class="w-4 h-4" />
-                    </button>
-                  {/if}
+                    <!-- The API decides what counts as weak, so the floor
+                         lives in one place and history keeps the flag. -->
+                    {#if message.role === 'assistant' && message.metadata?.low_confidence && message.citations?.length}
+                      <div class="mt-3 flex items-start gap-2 text-xs text-warning">
+                        <TriangleAlert class="w-4 h-4 shrink-0" />
+                        <span>
+                          Weak match. The documents may not cover this question, so check the
+                          sources before relying on this answer.
+                        </span>
+                      </div>
+                    {/if}
+
+                    <!-- Citations for assistant messages -->
+                    {#if message.role === 'assistant' && message.citations && message.citations.length > 0}
+                      <div class="mt-4 pt-3 border-t border-base-content/10">
+                        <div class="text-xs font-medium mb-2 text-base-content/60">
+                          Sources ({message.citations.length}):
+                        </div>
+                        <div class="space-y-2">
+                          {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
+                            <div
+                              id="citation-{message.id}-{index}"
+                              class="flex items-start gap-2 text-xs transition-all duration-300"
+                            >
+                              <div class="flex-1">
+                                <div class="font-medium">
+                                  <span
+                                    class="inline-flex items-center justify-center w-5 h-5 text-xs font-bold bg-primary text-primary-content rounded-full mr-1"
+                                  >
+                                    {index + 1}
+                                  </span>
+                                  <button
+                                    class="text-left hover:text-primary hover:underline transition-colors cursor-pointer"
+                                    onclick={() => handleFilenameClick(citation.file_name)}
+                                    title="Click to find this file in the documents sidebar"
+                                  >
+                                    {citation.file_name}
+                                  </button>
+                                </div>
+                                {#if citation.page_number}
+                                  <div class="text-base-content/70">
+                                    Page {citation.page_number}
+                                  </div>
+                                {/if}
+                                <div class="text-base-content/60 mt-1 line-clamp-2">
+                                  {citation.text_snippet}
+                                </div>
+                                <div class="text-base-content/60 mt-1">
+                                  Relevance: {(citation.similarity_score * 100).toFixed(0)}%
+                                </div>
+                              </div>
+                            </div>
+                          {/each}
+                          {#if getVisibleCitationsCount(message.id, message.citations.length) < message.citations.length}
+                            <button
+                              class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
+                              onclick={() => showMoreCitations(message.id)}
+                            >
+                              <span
+                                >Show {Math.min(
+                                  3,
+                                  message.citations.length -
+                                    getVisibleCitationsCount(message.id, message.citations.length)
+                                )} more</span
+                              >
+                              <svg
+                                class="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  stroke-width="2"
+                                  d="M19 9l-7 7-7-7"
+                                ></path>
+                              </svg>
+                            </button>
+                          {:else if getVisibleCitationsCount(message.id, message.citations.length) > 3}
+                            <button
+                              class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-base-content"
+                              onclick={() => showLessCitations(message.id)}
+                            >
+                              <span>Show less</span>
+                              <svg
+                                class="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  stroke-width="2"
+                                  d="M5 15l7-7 7 7"
+                                ></path>
+                              </svg>
+                            </button>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+
+                    <!-- Metadata for assistant messages -->
+                    {#if message.role === 'assistant' && message.metadata}
+                      <div class="mt-2 text-xs text-base-content/60">
+                        {#if message.metadata.processing_time_ms}
+                          {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
+                        {/if}
+                        {#if message.metadata.llm_model}
+                          • {message.metadata.llm_model}
+                        {/if}
+                      </div>
+                    {/if}
+                  </div>
+                  <div class="mt-1 text-xs text-base-content/60">
+                    {new Date(message.created_at).toLocaleTimeString()}
+                  </div>
                 </div>
-              </div>
-
-              <div class="mt-2 flex min-h-6 items-center px-1">
-                <span class="text-xs text-base-content/50">
-                  Enter to send, Shift+Enter for a new line
-                </span>
-              </div>
-
-              {#if !hasMessages}
-                <!-- Reserved height so the composer does not move when the chips arrive. -->
-                <div class="mt-4 min-h-50 sm:min-h-24">
-                  {#if suggestionsFor !== null && suggestionsView.status === 'loading'}
-                    <div
-                      class="grid grid-cols-1 gap-2 sm:grid-cols-2"
-                      role="status"
-                      aria-busy="true"
-                      aria-label="Loading suggested questions"
-                      data-testid="suggestions-loading"
-                    >
-                      {#each [0, 1, 2, 3] as index (index)}
-                        <div class="skeleton h-11 rounded-xl"></div>
-                      {/each}
-                    </div>
-                  {:else if suggestionsFor !== null && suggestionsView.status === 'chips'}
-                    <ul
-                      class="grid grid-cols-1 gap-2 sm:grid-cols-2"
-                      aria-label="Suggested questions"
-                      data-testid="suggestions"
-                    >
-                      {#each suggestionsView.suggestions as question, index (index)}
-                        <li class="flex">
-                          <button
-                            type="button"
-                            class="flex min-h-11 w-full cursor-pointer items-center rounded-xl border border-base-content/15 bg-transparent px-3 py-2 text-left text-sm leading-5 text-base-content/80 transition-colors hover:border-base-content/30 hover:bg-base-200 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-                            title={question}
-                            disabled={chatLoading}
-                            onclick={() => handleSendMessage(question)}
-                          >
-                            <span class="line-clamp-2">{question}</span>
-                          </button>
-                        </li>
-                      {/each}
-                    </ul>
-                  {:else if suggestionsFor !== null && suggestionsView.status === 'empty'}
-                    <p class="px-1 text-sm text-base-content/60" data-testid="suggestions-empty">
-                      <button
-                        type="button"
-                        class="link link-hover text-base-content/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-sm"
-                        onclick={onUploadClick}
-                      >
-                        Upload a document
-                      </button>
-                      to start.
-                    </p>
-                  {/if}
-                </div>
-              {/if}
+              {/each}
             </div>
           </div>
         {/if}
+
+        <!-- One composer for every layout, so the draft and focus survive a project switch. -->
+        <div class="pb-4 {showEmptyChat ? 'flex flex-1 flex-col justify-center' : 'pt-2'}">
+          <div class="mx-auto w-full max-w-3xl px-4">
+            {#if showEmptyChat && historyFailed}
+              <div class="mb-6">
+                {@render historyError()}
+              </div>
+            {:else if showEmptyChat}
+              <div class="mb-6 px-1">
+                <h2 class="text-2xl font-medium text-balance">What do you want to know?</h2>
+                <p class="mt-2 text-sm text-base-content/60">
+                  Answers come from the documents in
+                  <span class="text-base-content/80">{$selectedProject.name}</span>.
+                </p>
+              </div>
+            {/if}
+
+            <div
+              class="rounded-2xl border border-base-content/15 bg-base-200 px-3 pt-3 pb-2 transition-colors focus-within:border-base-content/40 focus-within:ring-2 focus-within:ring-primary/40"
+            >
+              <label for="chat-input" class="sr-only">Message</label>
+              <textarea
+                id="chat-input"
+                bind:this={textareaEl}
+                bind:value={userInput}
+                onkeydown={handleKeyDown}
+                placeholder="Ask about your documents…"
+                rows="1"
+                class="block w-full resize-none bg-transparent px-1 text-base leading-6 outline-none placeholder:text-base-content/50"
+              ></textarea>
+              <div class="mt-2 flex justify-end">
+                {#if chatLoading}
+                  <button
+                    type="button"
+                    class="btn btn-circle btn-sm btn-neutral"
+                    onclick={handleStop}
+                    aria-label="Stop"
+                    title="Stop waiting for the answer"
+                  >
+                    <Square class="w-4 h-4" fill="currentColor" />
+                  </button>
+                {:else}
+                  <button
+                    type="button"
+                    class="btn btn-circle btn-sm btn-primary"
+                    onclick={sendComposerInput}
+                    disabled={!canSend(userInput, loadingHistory)}
+                    aria-label="Send message"
+                  >
+                    <ArrowUp class="w-4 h-4" />
+                  </button>
+                {/if}
+              </div>
+            </div>
+
+            <div class="mt-2 flex min-h-6 items-center px-1">
+              <span class="text-xs text-base-content/50">
+                Enter to send, Shift+Enter for a new line
+              </span>
+            </div>
+
+            {#if showEmptyChat}
+              <!-- Reserved height so the composer does not move when the chips arrive. -->
+              <div class="mt-4 min-h-50 sm:min-h-24">
+                {#if suggestionsFor !== null && suggestionsView.status === 'loading'}
+                  <div
+                    class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                    role="status"
+                    aria-busy="true"
+                    aria-label="Loading suggested questions"
+                    data-testid="suggestions-loading"
+                  >
+                    {#each [0, 1, 2, 3] as index (index)}
+                      <div class="skeleton h-11 rounded-xl"></div>
+                    {/each}
+                  </div>
+                {:else if suggestionsFor !== null && suggestionsView.status === 'chips'}
+                  <ul
+                    class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                    aria-label="Suggested questions"
+                    data-testid="suggestions"
+                  >
+                    {#each suggestionsView.suggestions as question, index (index)}
+                      <li class="flex">
+                        <button
+                          type="button"
+                          class="flex min-h-11 w-full cursor-pointer items-center rounded-xl border border-base-content/15 bg-transparent px-3 py-2 text-left text-sm leading-5 text-base-content/80 transition-colors hover:border-base-content/30 hover:bg-base-200 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+                          title={question}
+                          disabled={chatLoading}
+                          onclick={() => handleSendMessage(question)}
+                        >
+                          <span class="line-clamp-2">{question}</span>
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                {:else if suggestionsFor !== null && suggestionsView.status === 'empty'}
+                  <p class="px-1 text-sm text-base-content/60" data-testid="suggestions-empty">
+                    <button
+                      type="button"
+                      class="link link-hover text-base-content/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-sm"
+                      onclick={onUploadClick}
+                    >
+                      Upload a document
+                    </button>
+                    to start.
+                  </p>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </div>
       </div>
     {/if}
   </div>

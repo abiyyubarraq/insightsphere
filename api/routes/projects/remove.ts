@@ -9,11 +9,16 @@ import type { Context } from "hono";
 import { currentUser } from "../../lib/auth.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { qdrantService } from "../../lib/qdrantClient.ts";
+import { projectIdShape } from "../../lib/documentAccess.ts";
 
 export async function deleteProject(c: Context) {
   const projectId = c.req.param("projectId");
   if (!projectId) {
     return c.json({ success: false, error: "Project ID is required" }, 400);
+  }
+
+  if (projectIdShape(projectId) === "not_found") {
+    return c.json({ success: false, error: "Project not found." }, 404);
   }
 
   const user = currentUser(c);

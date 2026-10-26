@@ -219,6 +219,25 @@ document_check() {
     [ "$s" = "404" ] && ok "$endpoint with the user's other project -> 404" \
                      || bad "$endpoint with the user's other project -> $s (expected 404)"
   done
+  # A project id that is not a UUID gets the same answer as the wrong project.
+  local in_project='{"success":false,"error":"Document not found in this project."}'
+  local resp body
+  for endpoint in process generateSummary; do
+    resp=$(curl -s -w '\n%{http_code}' -X POST "$API/v1/documents/$endpoint" \
+      -H "Authorization: Bearer $u_token" -H 'Content-Type: application/json' \
+      -d '{"document_id":"'"$doc"'","project_id":"not-a-uuid"}')
+    s=$(printf '%s' "$resp" | tail -1)
+    body=$(printf '%s' "$resp" | sed '$d')
+    if [ "$s" = "404" ] && [ "$body" = "$in_project" ]; then
+      ok "$endpoint with a malformed project id -> 404 Document not found in this project."
+    else
+      bad "$endpoint with a malformed project id -> $s $(printf '%s' "$body" | head -c 80) (expected 404 $in_project)"
+    fi
+  done
+  s=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$API/v1/projects/not-a-uuid" \
+    -H "Authorization: Bearer $u_token")
+  [ "$s" = "404" ] && ok "DELETE project with a malformed id -> 404" \
+                   || bad "DELETE project with a malformed id -> $s (expected 404)"
   [ "$(doc_status "$doc")" = '"status":"ready"' ] && ok "document status unchanged (ready)" \
                                                    || bad "document status changed: $(doc_status "$doc")"
   [ "$(usage_total "$u_id")" = "$before" ] && ok "no quota charged" \
@@ -233,7 +252,7 @@ document_check() {
   [ -n "$v_project" ] || { bad "could not create the second user's project"; return; }
 
   local expected='{"success":false,"error":"Document not found."}'
-  local v_before label id resp body
+  local v_before label id
   v_before=$(usage_total "$v_id")
   for label in "a random id" "a malformed id" "another user's document"; do
     case "$label" in

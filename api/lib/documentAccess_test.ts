@@ -4,6 +4,7 @@ import {
   type DocumentOwner,
   documentFromLookup,
   documentInProject,
+  projectIdShape,
 } from "./documentAccess.ts";
 
 const USER_A = "11111111-1111-4111-8111-111111111111";
@@ -63,4 +64,24 @@ Deno.test("malformed id from the lookup is not found", () => {
 Deno.test("any other database error from the lookup throws", () => {
   const error = { code: "08006", message: "connection failure" };
   assertThrows(() => documentFromLookup(lookup({ data: null, error }), USER_A), Error, "connection failure");
+});
+
+// A real project id must still reach the project access check.
+Deno.test("a UUID project id is valid", () => {
+  assertEquals(projectIdShape(PROJECT_A), "valid");
+});
+
+// A project id that is not a UUID reached Postgres as 22P02 and answered 403
+// instead of not found.
+Deno.test("a project id that is not a UUID is not found", () => {
+  for (const id of ["not-a-uuid", " ", "0", "' OR 1=1 --", PROJECT_A + "x", "a".repeat(10_000)]) {
+    assertEquals(projectIdShape(id), "not_found", id.slice(0, 20));
+  }
+});
+
+// A JSON body can carry any type, and a number or object must not get through.
+Deno.test("a project id that is not a string is not found", () => {
+  for (const id of [123, null, undefined, {}, [PROJECT_A], true]) {
+    assertEquals(projectIdShape(id), "not_found");
+  }
 });
