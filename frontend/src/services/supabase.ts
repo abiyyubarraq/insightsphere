@@ -13,6 +13,7 @@ import {
   AuthFormError,
   classifyRecoverError,
   classifySignInError,
+  classifySignUpError,
   classifyUpdatePasswordError,
 } from '../lib/authForms';
 
@@ -155,7 +156,7 @@ const assertSessionValid = async (response: Response): Promise<void> => {
 // Google OAuth Sign-In / Sign-Up
 export const signInWithGoogle = async (): Promise<void> => {
   const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
-  if (error) throw new Error(error.message);
+  if (error) throw new AuthFormError('unknown');
 };
 
 // Email & Password Sign-Up
@@ -173,9 +174,8 @@ export const signUpWithEmail = async (
       },
     },
   });
-  if (error || !data.user) {
-    throw new Error(error?.message || 'Failed to create account');
-  }
+  if (error) throw new AuthFormError(classifySignUpError(error));
+  if (!data.user) throw new AuthFormError('unknown');
   return data.user;
 };
 
