@@ -160,6 +160,16 @@ export class ChatService {
     }
   }
 
+  /** Used to take back a question whose answer could not be saved. */
+  async deleteMessage(messageId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from("chat_messages")
+      .delete()
+      .eq("id", messageId);
+
+    if (error) throw new Error(`Failed to delete message: ${error.message}`);
+  }
+
   /**
    * Build context window from conversation history
    * This creates a conversational context for the LLM

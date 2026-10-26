@@ -3,6 +3,7 @@ import {
   isAuthRetryableFetchError,
   type SupabaseClient,
 } from "@supabase/supabase-js";
+import type { SuggestionDoc } from "./suggestions.ts";
 
 /**
  * Supabase Auth could not be reached or failed on its side, so nothing is known
@@ -408,6 +409,44 @@ export class SupabaseService {
       console.error("Error checking project access:", error);
       return false;
     }
+  }
+
+  /**
+   * The project's ready documents, newest first, without summary text: it is
+   * enough for the suggestions cache key. The service role skips RLS, so call
+   * this only after userHasProjectAccess for the same project.
+   */
+  async getReadyDocuments(projectId: string): Promise<SuggestionDoc[]> {
+    const { data, error } = await this.client
+      .from("project_files")
+      .select("id, file_name, is_summary_exist, updated_at")
+      .eq("project_id", projectId)
+      .eq("status", "ready")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Failed to list ready documents: ${error.message}`);
+    return (data ?? []) as SuggestionDoc[];
+  }
+
+  /**
+   * Summary text of some of the project's ready documents, by id. Same access
+   * rule as getReadyDocuments.
+   */
+  async getDocumentSummaries(
+    projectId: string,
+    documentIds: string[],
+  ): Promise<Map<string, string | null>> {
+    const { data, error } = await this.client
+      .from("project_files")
+      .select("id, summary")
+      .eq("project_id", projectId)
+      .eq("status", "ready")
+      .in("id", documentIds);
+
+    if (error) throw new Error(`Failed to read document summaries: ${error.message}`);
+    return new Map(
+      (data ?? []).map((row: { id: string; summary: string | null }) => [row.id, row.summary]),
+    );
   }
 
   /**

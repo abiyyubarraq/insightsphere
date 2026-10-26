@@ -68,7 +68,7 @@ new code — import it.
 | Storage path | `{userId}/{projectId}/{timestamp}_{filename}` | `frontend/src/services/supabase.ts` |
 | Daily quotas | per tier in the `quota_tiers` table, not in code; no `user_tiers` row = `basic` | `supabase/migrations/0006_quota.sql` |
 | Own key and quotas | a user with a saved key skips all four daily quotas; the burst limit still applies | `api/lib/quotaGate.ts` |
-| Burst limit | 20 requests/minute per user on chat, query, process, summary, saving an own key | `api/main.ts` |
+| Burst limit | 20 requests/minute per user, one shared counter, on chat, query, process, summary, suggestions, `/search/query`, `/searchFiles` in semantic mode only, saving an own key | `api/main.ts` |
 | Own key shape | starts `sk-`, 20 to 300 chars, only `[A-Za-z0-9_-]` | `api/lib/openaiKeyCheck.ts` |
 | Own key check call | one embedding, 10 s timeout, no retries | `api/routes/settings/apiKey.ts` |
 | Own key encryption | AES-256-GCM, new 12-byte IV per save, user id bound in as GCM additional data, secret `KEY_ENCRYPTION_SECRET` | `api/lib/keyCrypto.ts` |
@@ -94,7 +94,7 @@ in: no admin mode, no shared secret, no test routes.
 | `DELETE` | `/v1/documents/:documentId` |
 | `POST` | `/v1/projects/:projectId/chat` — conversational RAG |
 | `POST` | `/v1/projects/:projectId/query` — one-shot, no history |
-| `GET` | `/v1/projects/:projectId/query/suggestions` |
+| `GET` | `/v1/projects/:projectId/query/suggestions` — 4 questions from one `gpt-4o-mini` call over ready file names and summaries, cached per project in memory; `source` is `generated`, `fallback` (fixed list) or `empty` (no ready documents, no call); own key when saved, no daily quota |
 | `DELETE` | `/v1/projects/:projectId` |
 | `POST` | `/v1/search/query` — raw chunks, no generation |
 | `POST` | `/v1/searchFiles` — file library, filename or semantic |
@@ -104,7 +104,8 @@ in: no admin mode, no shared secret, no test routes.
 | `GET` | `/health` |
 
 Chat, query, process and summary answer **429** at a daily quota or the burst
-limit, with a sentence meant for the user in `error`. Process answers **409**
+limit, with a sentence meant for the user in `error`; suggestions and search
+only at the burst limit. Process answers **409**
 for a document already processing; summary answers **409** when one exists,
 unless the body has `regenerate: true`. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.

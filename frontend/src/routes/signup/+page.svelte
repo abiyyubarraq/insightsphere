@@ -70,9 +70,10 @@
     try {
       await signInWithGoogle();
     } catch {
-      error = AUTH_ERROR_MESSAGES.unknown;
-    } finally {
+      // Only on error: on success the browser is leaving for Google, and the
+      // spinner should stay until it has gone.
       loadingSignupWithGoogle = false;
+      error = AUTH_ERROR_MESSAGES.unknown;
     }
   }
 </script>

@@ -96,7 +96,7 @@ Every endpoint needs `Authorization: Bearer <supabase-jwt>`. There is no other w
 | `DELETE` | `/v1/documents/:documentId` | Removes vectors, page images, the file and the row |
 | `POST` | `/v1/projects/:projectId/chat` | Conversational RAG with citations |
 | `POST` | `/v1/projects/:projectId/query` | One-shot RAG, no history |
-| `GET` | `/v1/projects/:projectId/query/suggestions` | Starter questions |
+| `GET` | `/v1/projects/:projectId/query/suggestions` | Up to 4 starter questions written from the ready documents' names and summaries, cached per project |
 | `DELETE` | `/v1/projects/:projectId` | Drops the collection and everything under it |
 | `POST` | `/v1/search/query` | Raw chunk search, no generation |
 | `POST` | `/v1/searchFiles` | File library, by filename or semantic |

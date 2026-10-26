@@ -325,7 +325,7 @@
         </div>
 
         <!-- Project Filter - DaisyUI Dropdown Multi-Select -->
-        <div class="dropdown dropdown-bottom w-1/6">
+        <div class="dropdown dropdown-bottom w-full sm:w-48">
           <button type="button" tabindex="0" class="btn btn-outline w-full justify-between">
             <span>{selectedCountText}</span>
             <ChevronDown class="w-4 h-4" aria-hidden="true" />

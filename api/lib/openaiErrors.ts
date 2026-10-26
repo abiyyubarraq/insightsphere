@@ -31,6 +31,14 @@ export class OpenAIRequestError extends Error {
   }
 }
 
+/**
+ * Names the page in processing_error. Built on the original error, so status
+ * and code still reach userKeyFailure, and the text is masked again.
+ */
+export function embeddingFailedOnPage(page: number, error: unknown): OpenAIRequestError {
+  return new OpenAIRequestError(`Embedding failed on page ${page}`, error);
+}
+
 export const KEY_REJECTED = "Your OpenAI key was rejected. Update it in Settings.";
 export const KEY_OUT_OF_CREDIT =
   "Your OpenAI account has hit its limit or has no credit left. Check your OpenAI billing, then try again.";

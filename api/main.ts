@@ -1,10 +1,11 @@
 /// <reference lib="deno.ns" />
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { rateLimiter } from "hono-rate-limiter";
 import { assertEnv } from "./lib/config.ts";
 import type { AppEnv } from "./lib/auth.ts";
+import { isSemanticSearch } from "./lib/burstScope.ts";
 
 // Checked before the route modules load, because the clients they import
 // construct themselves at module scope and throw one at a time.
@@ -75,6 +76,13 @@ const burst = rateLimiter<AppEnv>({
     }, 429),
 });
 
+// Hono keeps the parsed body, so the handler can still read it. A body that
+// does not parse skips the limit and fails in the handler as before.
+const burstIfSemantic: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const body: unknown = await c.req.json().catch(() => null);
+  return isSemanticSearch(body) ? burst(c, next) : next();
+};
+
 // Every route takes requireUser explicitly rather than api.use("*"), which
 // would also catch unknown paths and turn their 404 into a 401.
 
@@ -84,12 +92,17 @@ api.post("/documents/generateSummary", requireUser, burst, generateSummary);
 api.delete("/documents/:documentId", requireUser, deleteDocument);
 
 // Search
-api.post("/search/query", requireUser, searchDocuments);
-api.post("/searchFiles", requireUser, searchFiles);
+api.post("/search/query", requireUser, burst, searchDocuments);
+api.post("/searchFiles", requireUser, burstIfSemantic, searchFiles);
 
 // RAG
 api.post("/projects/:projectId/query", requireUser, burst, queryProject);
-api.get("/projects/:projectId/query/suggestions", requireUser, getQuerySuggestions);
+api.get(
+  "/projects/:projectId/query/suggestions",
+  requireUser,
+  burst,
+  getQuerySuggestions,
+);
 api.post("/projects/:projectId/chat", requireUser, burst, sendChatMessage);
 api.delete("/projects/:projectId", requireUser, deleteProject);
 

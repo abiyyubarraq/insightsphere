@@ -9,3 +9,15 @@ export const isStillCurrent = <T extends object>(requestedFor: T, currentFor: T)
   (Object.keys(requestedFor) as (keyof T)[]).every((key) =>
     Object.is(requestedFor[key], currentFor[key])
   );
+
+/**
+ * The reply when the user is still on the project it was asked for, otherwise
+ * null. After an upload or a process call the follow-up file list belongs to
+ * the captured project, never to whatever is selected by then.
+ */
+export const replyForProject = <T>(
+  reply: T,
+  requestedProjectId: string,
+  currentProjectId: string | undefined
+): T | null =>
+  isStillCurrent({ projectId: requestedProjectId }, { projectId: currentProjectId }) ? reply : null;

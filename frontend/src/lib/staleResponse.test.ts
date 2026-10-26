@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isStillCurrent } from './staleResponse';
+import { isStillCurrent, replyForProject } from './staleResponse';
 
 describe('deciding if a reply still belongs on screen', () => {
   it('accepts a reply when nothing changed', () => {
@@ -44,5 +44,20 @@ describe('deciding if a reply still belongs on screen', () => {
   ])('drops an older chat page when the %s changed', (_name, current) => {
     const requested = { conversationId: 'c1', projectId: 'p1', generation: 1 };
     expect(isStillCurrent(requested, current)).toBe(false);
+  });
+});
+
+describe('applying a file list after an upload or a process call', () => {
+  const files = [{ id: 'f1' }];
+
+  it('keeps the list when the user is still on that project', () => {
+    expect(replyForProject(files, 'a', 'a')).toBe(files);
+  });
+
+  // Project A's files were written into project B when the user switched
+  // while A's upload was still running.
+  it('drops the list when the user switched project or has none selected', () => {
+    expect(replyForProject(files, 'a', 'b')).toBeNull();
+    expect(replyForProject(files, 'a', undefined)).toBeNull();
   });
 });

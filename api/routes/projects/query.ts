@@ -16,6 +16,13 @@ import {
 } from "../../lib/quotaService.ts";
 import { keyFailureResponse } from "../../lib/openaiErrors.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
+import {
+  createSuggestionCache,
+  getSuggestions,
+  SUGGESTION_MAX_TOKENS,
+  SUGGESTION_MODEL,
+  SUGGESTION_TEMPERATURE,
+} from "../../lib/suggestions.ts";
 
 interface QueryRequest {
   query: string;
@@ -156,12 +163,20 @@ export async function queryProject(c: Context) {
   }
 }
 
+/** One per API process; it starts empty after every deploy. */
+const suggestionCache = createSuggestionCache();
+
 /**
- * Get query suggestions based on project content
+ * Example questions written from the project's ready documents
  * GET /v1/projects/:projectId/query/suggestions
+ *
+ * Takes no daily quota, only the burst limit: the cache makes it about one
+ * cheap call per document change, and a project gets at most one model call
+ * per SUGGESTION_MIN_INTERVAL_MS however its rows change.
  */
 export async function getQuerySuggestions(c: Context) {
   try {
+    const user = currentUser(c);
     const projectId = c.req.param("projectId");
     if (!projectId) {
       return c.json({
@@ -171,7 +186,7 @@ export async function getQuerySuggestions(c: Context) {
     }
 
     const hasAccess = await supabaseService.userHasProjectAccess(
-      currentUser(c).id,
+      user.id,
       projectId,
     );
     if (!hasAccess) {
@@ -181,23 +196,42 @@ export async function getQuerySuggestions(c: Context) {
       );
     }
 
-    // For now, return static suggestions
-    // TODO: Generate dynamic suggestions based on document content
-    const suggestions = [
-      "What are the main topics covered in these documents?",
-      "Can you summarize the key findings?",
-      "What methodology was used?",
-      "What are the conclusions and recommendations?",
-      "Are there any important statistics or data points?",
-      "What are the main challenges or limitations mentioned?",
-      "Who are the key authors or contributors?",
-      "What future research directions are suggested?",
-    ];
+    const docs = await supabaseService.getReadyDocuments(projectId);
+    const { suggestions, source } = await getSuggestions(
+      projectId,
+      docs,
+      // The key is looked up only when a model call is really needed. With a
+      // saved key a failure gives the fallback list, never a retry on the
+      // server key.
+      async (messages, signal) => {
+        const openai = await openAIForUser(user.id);
+        const result = await openai.client.generateChatCompletion({
+          model: SUGGESTION_MODEL,
+          messages,
+          max_tokens: SUGGESTION_MAX_TOKENS,
+          temperature: SUGGESTION_TEMPERATURE,
+          signal,
+        });
+        return result.answer;
+      },
+      suggestionCache,
+      {
+        loadSummaries: (ids) => supabaseService.getDocumentSummaries(projectId, ids),
+      },
+    );
+
+    console.log("Query suggestions:", {
+      projectId,
+      readyDocuments: docs.length,
+      count: suggestions.length,
+      source,
+    });
 
     return c.json({
       success: true,
       project_id: projectId,
       suggestions,
+      source,
       generated_at: new Date().toISOString(),
     });
   } catch (error) {

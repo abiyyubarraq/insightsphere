@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertFalse } from "@std/assert";
 import {
+  embeddingFailedOnPage,
   failureText,
   KEY_NO_MODEL,
   KEY_OUT_OF_CREDIT,
@@ -98,4 +99,17 @@ Deno.test("processing_error on the server key stays the masked message", () => {
   assert(text.startsWith("Failed to generate batch embeddings: "));
   assertFalse(text.includes("wxyz"));
   assertEquals(failureText(new Error("Parser error: x"), true), "Parser error: x");
+});
+
+// Since own keys, the client error was rethrown as is, so processing_error no
+// longer said which page failed.
+Deno.test("an embedding failure names the page and keeps the key mapping", () => {
+  const sdk = sdkError({ status: 401 }, "Incorrect API key provided: sk-proj-abc***wxyz");
+  const error = embeddingFailedOnPage(7, new OpenAIRequestError("Failed to generate batch embeddings", sdk));
+
+  assert(error.message.startsWith("Embedding failed on page 7: "));
+  assertEquals(error.status, 401);
+  assertFalse(error.message.includes("wxyz"));
+  assertEquals(failureText(error, true), KEY_REJECTED);
+  assert(failureText(error, false).includes("page 7"));
 });
