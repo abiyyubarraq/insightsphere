@@ -110,6 +110,11 @@ for a document already processing; summary answers **409** when one exists,
 unless the body has `regenerate: true`. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
 
+Process, summary and `DELETE /v1/documents/:documentId` answer **404**
+`"Document not found."` for a missing id, a malformed id and another user's
+document alike, so the answer never says the id exists. It comes before any
+claim, quota charge or OpenAI call. A real database error is still **500**.
+
 Chat answers **404** `"Conversation not found."` for a `conversation_id` that
 is not the user's own in that project. Process and summary answer **404** when
 the body `project_id` is not the document's own project. Both come before the

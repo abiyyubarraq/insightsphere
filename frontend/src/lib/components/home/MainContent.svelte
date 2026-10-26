@@ -7,6 +7,7 @@
     Square,
     SquarePen,
     TriangleAlert,
+    RotateCw,
   } from 'lucide-svelte';
   import { onDestroy, tick, untrack } from 'svelte';
   import { selectedProject, projects } from '../../../stores/project';
@@ -22,9 +23,9 @@
   import type { ChatMessage } from '../../../../../shared/types/chat';
   import { ConfirmationDialog, NoticeBanner } from '../common';
   import ChatMarkdown from './ChatMarkdown.svelte';
-  import { canSend, shouldSubmitOnKey } from '$lib/chatComposer';
+  import { canSend, isComposerBusy, shouldSubmitOnKey } from '$lib/chatComposer';
   import { applyOlderPage } from '$lib/chatHistory';
-  import { emptyChatState, needsChatReset } from '$lib/chatState';
+  import { canRetryHistory, emptyChatState, loadHistory, needsChatReset } from '$lib/chatState';
   import { isStillCurrent } from '$lib/staleResponse';
   import { readSuggestions, suggestionsKey, type SuggestionsView } from '$lib/suggestions';
 
@@ -70,6 +71,8 @@
   let chatErrorTone: 'error' | 'warning' = $state('error');
   let messagesContainer: HTMLDivElement | undefined = $state();
   let loadingHistory = $state(false);
+  let historyFailed = $state(false);
+  let retryButtonEl: HTMLButtonElement | undefined = $state();
   let loadedProjectId: string | undefined = $state(undefined);
   // The project the messages, conversationId and hasMore on screen belong to.
   // Set on every switch; loadedProjectId is set only when the history load works.
@@ -201,6 +204,7 @@
         untrack(resetPaging);
         ({ messages: chatMessages, conversationId, hasMore } = emptyChatState());
         chatProjectId = $selectedProject.id;
+        historyFailed = false;
         loadConversationHistory();
       }
     } else {
@@ -211,6 +215,7 @@
       chatError = '';
       loadedProjectId = undefined;
       loadingHistory = false;
+      historyFailed = false;
     }
   });
 
@@ -223,23 +228,28 @@
       generation: loadGeneration,
     });
     const requestedFor = currentHistoryRequest();
-    try {
-      loadingHistory = true;
-      chatError = '';
-      const response = await getConversationHistory(projectId);
-      if (!isStillCurrent(requestedFor, currentHistoryRequest())) return;
-      chatMessages = response.messages || [];
-      hasMore = response.has_more;
-      conversationId = response.conversation?.id;
-      loadedProjectId = projectId; // Mark this project as loaded
-    } catch (error) {
-      if (!isStillCurrent(requestedFor, currentHistoryRequest())) return;
-      console.error('Failed to load conversation history:', error);
-      chatError = error instanceof Error ? error.message : 'Failed to load conversation history';
-    } finally {
-      // After a project change, the newer request owns the flag.
-      if (isStillCurrent(requestedFor, currentHistoryRequest())) loadingHistory = false;
+    loadingHistory = true;
+    chatError = '';
+    const result = await loadHistory(
+      () => getConversationHistory(projectId),
+      () => isStillCurrent(requestedFor, currentHistoryRequest())
+    );
+    // After a project change, the newer request owns the chat and the flags.
+    if (result.status === 'stale') return;
+    loadingHistory = false;
+    historyFailed = result.status === 'failed';
+    if (result.status === 'loaded') {
+      ({ messages: chatMessages, conversationId, hasMore } = result.chat);
+      loadedProjectId = projectId;
     }
+  };
+
+  const retryHistory = async () => {
+    if (!canRetryHistory(historyFailed, isComposerBusy(chatLoading, loadingHistory))) return;
+    await loadConversationHistory();
+    // The button was replaced by the spinner, so focus would be lost.
+    await tick();
+    (historyFailed ? retryButtonEl : textareaEl)?.focus();
   };
 
   const loadOlderMessages = async () => {
@@ -275,7 +285,8 @@
   };
 
   const handleSendMessage = async (text: string) => {
-    if (!canSend(text, chatLoading) || !$selectedProject || !$user) return;
+    if (!canSend(text, isComposerBusy(chatLoading, loadingHistory)) || !$selectedProject || !$user)
+      return;
 
     const message = text.trim();
     chatError = '';
@@ -345,7 +356,7 @@
   };
 
   const sendComposerInput = () => {
-    if (!canSend(userInput, chatLoading)) return;
+    if (!canSend(userInput, isComposerBusy(chatLoading, loadingHistory))) return;
     const text = userInput;
     userInput = '';
     handleSendMessage(text);
@@ -371,6 +382,7 @@
       await deleteConversationHistory($selectedProject.id);
       chatMessages = [];
       chatError = '';
+      historyFailed = false;
       resetPaging();
     } catch (error) {
       console.error('Failed to clear conversation:', error);
@@ -390,6 +402,7 @@
       chatMessages = [];
       conversationId = undefined;
       chatError = '';
+      historyFailed = false;
     } catch (error) {
       console.error('Failed to clear conversation:', error);
       chatError = error instanceof Error ? error.message : 'Failed to clear conversation';
@@ -467,6 +480,25 @@
     fileFilter = filename;
   };
 </script>
+
+{#snippet historyError()}
+  <div class="px-1" data-testid="history-error">
+    <div role="alert">
+      <p class="font-medium">Could not load this chat.</p>
+      <p class="mt-1 text-sm text-base-content/60">Check your connection and try again.</p>
+    </div>
+    <button
+      type="button"
+      bind:this={retryButtonEl}
+      class="btn btn-ghost mt-4 gap-2 border-base-content/15 font-normal hover:border-base-content/30 hover:bg-base-200"
+      onclick={retryHistory}
+      disabled={!canRetryHistory(historyFailed, isComposerBusy(chatLoading, loadingHistory))}
+    >
+      <RotateCw class="w-4 h-4" aria-hidden="true" />
+      Retry
+    </button>
+  </div>
+{/snippet}
 
 <!-- Main Content Area -->
 <div class="flex h-full min-w-0 flex-1 flex-col bg-base-100">
@@ -586,6 +618,12 @@
               bind:this={messagesContainer}
             >
               <div class="mx-auto w-full max-w-3xl space-y-8 px-4">
+                <!-- After a send in the failed state: the older messages are still missing. -->
+                {#if historyFailed}
+                  <div class="border-b border-base-content/10 pb-6">
+                    {@render historyError()}
+                  </div>
+                {/if}
                 {#if hasMore}
                   <div class="flex justify-center">
                     <button
@@ -754,7 +792,11 @@
           <!-- One composer for both layouts, so the draft and focus survive the move. -->
           <div class="pb-4 {hasMessages ? 'pt-2' : 'flex flex-1 flex-col justify-center'}">
             <div class="mx-auto w-full max-w-3xl px-4">
-              {#if !hasMessages}
+              {#if !hasMessages && historyFailed}
+                <div class="mb-6">
+                  {@render historyError()}
+                </div>
+              {:else if !hasMessages}
                 <div class="mb-6 px-1">
                   <h2 class="text-2xl font-medium text-balance">What do you want to know?</h2>
                   <p class="mt-2 text-sm text-base-content/60">
@@ -793,7 +835,7 @@
                       type="button"
                       class="btn btn-circle btn-sm btn-primary"
                       onclick={sendComposerInput}
-                      disabled={!canSend(userInput, false)}
+                      disabled={!canSend(userInput, loadingHistory)}
                       aria-label="Send message"
                     >
                       <ArrowUp class="w-4 h-4" />

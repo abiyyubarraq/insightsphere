@@ -1,5 +1,10 @@
-import { assertEquals } from "@std/assert";
-import { type DocumentOwner, documentInProject } from "./documentAccess.ts";
+import { assertEquals, assertThrows } from "@std/assert";
+import {
+  type DocumentLookup,
+  type DocumentOwner,
+  documentFromLookup,
+  documentInProject,
+} from "./documentAccess.ts";
 
 const USER_A = "11111111-1111-4111-8111-111111111111";
 const USER_B = "22222222-2222-4222-8222-222222222222";
@@ -26,4 +31,36 @@ Deno.test("own document with another project in the body is not found", () => {
 // The document of another user must never be processed, even in the right project.
 Deno.test("another user's document is not found", () => {
   assertEquals(documentInProject(document({ user_id: USER_B }), USER_A, PROJECT_A), "not_found");
+});
+
+const lookup = (
+  overrides: Partial<DocumentLookup<DocumentOwner>> = {},
+): DocumentLookup<DocumentOwner> => ({ data: document(), error: null, ...overrides });
+
+// Processing, summarising and deleting the user's own document must keep working.
+Deno.test("own document from the lookup is found", () => {
+  assertEquals(documentFromLookup(lookup(), USER_A), document());
+});
+
+// A missing document threw like a database error, and process and summary answered 500.
+Deno.test("no row from the lookup is not found", () => {
+  assertEquals(documentFromLookup(lookup({ data: null }), USER_A), null);
+});
+
+// Another user's document must look exactly like a missing one, or the answer
+// tells the caller that the id exists.
+Deno.test("another user's document from the lookup is not found", () => {
+  assertEquals(documentFromLookup(lookup({ data: document({ user_id: USER_B }) }), USER_A), null);
+});
+
+// An id that is not a UUID reached Postgres as 22P02 and ended as a 500.
+Deno.test("malformed id from the lookup is not found", () => {
+  const error = { code: "22P02", message: "invalid input syntax for type uuid" };
+  assertEquals(documentFromLookup(lookup({ data: null, error }), USER_A), null);
+});
+
+// DELETE turned every error into 404, so a database outage looked like "not found".
+Deno.test("any other database error from the lookup throws", () => {
+  const error = { code: "08006", message: "connection failure" };
+  assertThrows(() => documentFromLookup(lookup({ data: null, error }), USER_A), Error, "connection failure");
 });

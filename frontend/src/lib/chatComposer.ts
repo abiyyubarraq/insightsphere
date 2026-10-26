@@ -12,3 +12,11 @@ export const shouldSubmitOnKey = ({ key, shiftKey, isComposing, keyCode }: Compo
   key === 'Enter' && !shiftKey && !isComposing && keyCode !== IME_KEY_CODE;
 
 export const canSend = (text: string, busy: boolean): boolean => !busy && text.trim().length > 0;
+
+/**
+ * A history reply replaces the whole message list, so sending waits for it:
+ * otherwise the reply could drop a send's temporary messages, and the send's
+ * own reply would then be added a second time.
+ */
+export const isComposerBusy = (chatLoading: boolean, loadingHistory: boolean): boolean =>
+  chatLoading || loadingHistory;

@@ -178,8 +178,8 @@ conversation_check() {
 }
 conversation_check
 
-echo "== process and summary with another project_id must fail =="
-# One throwaway user with two projects. The document row points at a file that
+echo "== process, summary and delete of a document that is not the caller's must fail =="
+# Throwaway users and projects. The document row points at a file that
 # does not exist: the API answers 404 before the download, so nothing runs.
 usage_total() {
   curl -s "$URL/rest/v1/usage_counters?select=count&user_id=eq.$1" \
@@ -223,6 +223,47 @@ document_check() {
                                                    || bad "document status changed: $(doc_status "$doc")"
   [ "$(usage_total "$u_id")" = "$before" ] && ok "no quota charged" \
                                           || bad "quota changed: $before -> $(usage_total "$u_id")"
+
+  # A missing, a malformed and another user's id must get the same answer, so
+  # it never tells whether the id exists. The API answers before any claim,
+  # quota charge or OpenAI call.
+  make_user || { bad "could not create and sign in a second ship-test- user"; return; }
+  local v_id=$made_id v_token=$made_token v_project
+  v_project=$(service_insert projects '{"name":"ship-test-v","user_id":"'"$v_id"'"}')
+  [ -n "$v_project" ] || { bad "could not create the second user's project"; return; }
+
+  local expected='{"success":false,"error":"Document not found."}'
+  local v_before label id resp body
+  v_before=$(usage_total "$v_id")
+  for label in "a random id" "a malformed id" "another user's document"; do
+    case "$label" in
+      "a random id")    id="00000000-0000-4000-8000-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')" ;;
+      "a malformed id") id="not-a-uuid" ;;
+      *)                id="$doc" ;;
+    esac
+    for endpoint in process generateSummary DELETE; do
+      if [ "$endpoint" = DELETE ]; then
+        resp=$(curl -s -w '\n%{http_code}' -X DELETE "$API/v1/documents/$id" \
+          -H "Authorization: Bearer $v_token")
+      else
+        resp=$(curl -s -w '\n%{http_code}' -X POST "$API/v1/documents/$endpoint" \
+          -H "Authorization: Bearer $v_token" -H 'Content-Type: application/json' \
+          -d '{"document_id":"'"$id"'","project_id":"'"$v_project"'"}')
+      fi
+      s=$(printf '%s' "$resp" | tail -1)
+      body=$(printf '%s' "$resp" | sed '$d')
+      if [ "$s" = "404" ] && [ "$body" = "$expected" ]; then
+        ok "$endpoint with $label -> 404 Document not found."
+      else
+        bad "$endpoint with $label -> $s $(printf '%s' "$body" | head -c 80) (expected 404 $expected)"
+      fi
+    done
+  done
+  [ "$(doc_status "$doc")" = '"status":"ready"' ] \
+    && ok "the other user's document still exists, status unchanged (ready)" \
+    || bad "the other user's document changed or is gone: '$(doc_status "$doc")'"
+  [ "$(usage_total "$v_id")" = "$v_before" ] && ok "no quota charged for not-found documents" \
+                                            || bad "quota changed: $v_before -> $(usage_total "$v_id")"
 }
 document_check
 
