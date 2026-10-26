@@ -80,7 +80,7 @@ export async function queryProject(c: Context) {
     }
 
     console.log(
-      `🔍 RAG Query Request - Project: ${projectId}, Query: "${query}"`,
+      `🔍 RAG Query Request - Project: ${projectId}, query length: ${query.length}`,
     );
 
     const hasAccess = await supabaseService.userHasProjectAccess(
@@ -113,7 +113,11 @@ export async function queryProject(c: Context) {
       ...options,
     };
 
-    console.log(`⚙️ Query options:`, queryOptions);
+    console.log(`⚙️ Query options:`, {
+      max_chunks: queryOptions.max_chunks,
+      similarity_threshold: queryOptions.similarity_threshold,
+      max_context_length: queryOptions.max_context_length,
+    });
 
     // Execute RAG query
     const ragResult = await ragService.queryProject(
@@ -158,7 +162,6 @@ export async function queryProject(c: Context) {
     return c.json({
       success: false,
       error: "Query processing failed",
-      details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
 }
@@ -240,7 +243,6 @@ export async function getQuerySuggestions(c: Context) {
     return c.json({
       success: false,
       error: "Failed to get query suggestions",
-      details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
 }

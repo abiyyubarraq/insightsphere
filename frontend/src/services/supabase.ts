@@ -515,10 +515,11 @@ export const getConversationHistory = async (
   const userId = session.data.session.user.id;
 
   try {
-    // Get or create conversation
     // maybeSingle, not single: a project with no conversation yet is the normal
     // first case, and single answers 406 for it, which surfaces as a console error.
-    let { data: conversation, error: convError } = await supabase
+    // Not created here: the API creates it once the first answer exists, so a
+    // failed first answer leaves no empty conversation.
+    const { data: conversation, error: convError } = await supabase
       .from('chat_conversations')
       .select('*')
       .eq('project_id', projectId)
@@ -529,22 +530,8 @@ export const getConversationHistory = async (
       throw new Error(`Failed to get conversation: ${convError.message}`);
     }
 
-    // Create conversation if it doesn't exist
     if (!conversation) {
-      const { data: newConv, error: createError } = await supabase
-        .from('chat_conversations')
-        .insert({
-          project_id: projectId,
-          user_id: userId,
-          title: 'New Conversation',
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        throw new Error(`Failed to create conversation: ${createError.message}`);
-      }
-      conversation = newConv;
+      return { success: true, conversation: null, messages: [], has_more: false };
     }
 
     const { messages, hasMore } = await fetchNewestMessages<ChatMessage>(

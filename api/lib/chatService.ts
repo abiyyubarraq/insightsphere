@@ -14,6 +14,22 @@ import type { RAGQueryResult } from "./ragService.ts";
 export class ChatService {
   constructor(private supabase: SupabaseClient) {}
 
+  /** The user's conversation for a project, or null. Never creates one. */
+  async findConversation(
+    projectId: string,
+    userId: string,
+  ): Promise<ChatConversation | null> {
+    const { data, error } = await this.supabase
+      .from("chat_conversations")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to look up conversation: ${error.message}`);
+    return data as ChatConversation | null;
+  }
+
   /**
    * Get or create conversation for a project
    */

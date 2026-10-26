@@ -1,11 +1,24 @@
 import adapter from '@sveltejs/adapter-node';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { loadEnv } from 'vite';
 
 // In production Caddy serves the API under /v1 on this same origin, so 'self'
 // covers it. Locally the API is a separate port over plain http, which 'self'
 // does not cover and 'https:' does not match -- without this the CSP blocks
 // every API call in development.
 const dev = process.env.NODE_ENV !== 'production';
+
+// This file is read before Vite loads .env, so the .env value is read here.
+// A ship worktree runs its API on another port and sets VITE_API_URL for it.
+function devApiOrigin() {
+  const url =
+    process.env.VITE_API_URL ?? loadEnv('development', process.cwd(), 'VITE_').VITE_API_URL;
+  try {
+    return new URL(url ?? '').origin;
+  } catch {
+    return 'http://localhost:8000';
+  }
+}
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
@@ -35,11 +48,7 @@ const config = {
         'img-src': ['self', 'data:', 'blob:', 'https:'],
         'font-src': ['self', 'data:'],
         // https: covers Supabase, whose host is per-project.
-        'connect-src': [
-          'self',
-          'https:',
-          ...(dev ? ['http://localhost:8000', 'ws://localhost:*'] : []),
-        ],
+        'connect-src': ['self', 'https:', ...(dev ? [devApiOrigin(), 'ws://localhost:*'] : [])],
         'object-src': ['none'],
         'base-uri': ['self'],
         'frame-ancestors': ['none'],

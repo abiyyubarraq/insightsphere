@@ -385,7 +385,7 @@
             </p>
           </div>
         {:else}
-          <div class="grid grid-cols-5 gap-4">
+          <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
             {#each files as file (file.fileId)}
               <div
                 class="card bg-base-200/50 hover:bg-base-200 transition-all duration-300 cursor-pointer hover:scale-90 hover:ring-1 hover:ring-primary/50"

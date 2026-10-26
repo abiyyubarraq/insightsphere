@@ -4,12 +4,12 @@
  * POST /v1/projects/:projectId/chat
  *
  * Handles:
- * 1. Creating/retrieving conversation
+ * 1. Finding the conversation, if there is one
  * 2. Retrieving relevant document chunks with RAG
  * 3. Including conversation history for context-aware responses
  * 4. Generating AI response with citations
- * 5. Saving the user message and the assistant message with citations, only
- *    once the answer exists
+ * 5. Creating the conversation if needed, then saving the user message and the
+ *    assistant message with citations, only once the answer exists
  */
 
 import { type Context } from "hono";
@@ -90,16 +90,9 @@ export async function sendChatMessage(c: Context) {
     // Initialize chat service
     const chatService = new ChatService(supabaseService.getClient());
 
-    // Get or create conversation
-    let conversationId = conversation_id;
-    if (!conversationId) {
-      const conversation = await chatService.getOrCreateConversation(
-        projectId,
-        user.id,
-      );
-      conversationId = conversation.id;
-      console.log(`📝 Created new conversation: ${conversationId}`);
-    }
+    // Only looked up here. A new conversation is created after the answer.
+    const existingConversationId = conversation_id ||
+      (await chatService.findConversation(projectId, user.id))?.id;
 
     // Get conversation history if requested. Fetched before the current
     // message is saved, so the question being asked is not in its own history.
@@ -107,10 +100,10 @@ export async function sendChatMessage(c: Context) {
     let conversationTurns: HistoryTurn[] = [];
     const useHistory = options.use_conversation_history !== false; // Default true
 
-    if (useHistory) {
+    if (useHistory && existingConversationId) {
       const maxHistoryMessages = options.max_history_messages || 6;
       const recentMessages = await chatService.getRecentMessagesForContext(
-        conversationId,
+        existingConversationId,
         maxHistoryMessages,
       );
 
@@ -134,20 +127,34 @@ export async function sendChatMessage(c: Context) {
 
     // Execute RAG query with conversation context
     const ragOptions = {
-      max_chunks: options.max_chunks ?? 5,
+      max_chunks: options.max_chunks ?? SEARCH_DEFAULTS.maxChunks,
       similarity_threshold: options.similarity_threshold ?? SEARCH_DEFAULTS.threshold,
       use_short_context: false,
-      max_context_length: 4000,
+      max_context_length: SEARCH_DEFAULTS.maxContextLength,
       conversation_history: conversationContext, // Pass to RAG service
       conversation_turns: conversationTurns, // Used to rewrite the query before retrieval
     };
 
-    const { answer: ragResult, userMessage, assistantMessage } = await answerThenSave({
+    const {
+      answer: ragResult,
+      conversationId,
+      userMessage,
+      assistantMessage,
+    } = await answerThenSave({
+      conversationId: existingConversationId,
       answer: () =>
         ragService.queryProject(projectId, user.id, message, openai, ragOptions),
-      saveUser: () => chatService.saveUserMessage(conversationId, message),
-      saveAssistant: (result) =>
-        chatService.saveAssistantMessage(conversationId, result.answer, result),
+      ensureConversation: async () => {
+        const conversation = await chatService.getOrCreateConversation(
+          projectId,
+          user.id,
+        );
+        console.log(`📝 Created new conversation: ${conversation.id}`);
+        return conversation.id;
+      },
+      saveUser: (id) => chatService.saveUserMessage(id, message),
+      saveAssistant: (id, result) =>
+        chatService.saveAssistantMessage(id, result.answer, result),
       deleteMessage: (saved) => chatService.deleteMessage(saved.id),
     });
 
@@ -198,7 +205,6 @@ export async function sendChatMessage(c: Context) {
     return c.json({
       success: false,
       error: "Failed to process message",
-      details: error instanceof Error ? error.message : "Unknown error",
     }, 500);
   }
 }
