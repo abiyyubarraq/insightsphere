@@ -650,3 +650,19 @@ export const processDocument = async (
   const data = await response.json();
   return data;
 };
+
+/** The user's own OpenAI key as the API describes it. The key itself never comes back. */
+export interface ApiKeyStatus {
+  hasKey: boolean;
+  hint: string | null;
+  provider: 'openai' | null;
+  updatedAt: string | null;
+}
+
+export const getApiKeyStatus = (): Promise<ApiKeyStatus> => authedFetch('/settings/api-key');
+
+export const saveApiKey = (apiKey: string): Promise<ApiKeyStatus> =>
+  authedFetch('/settings/api-key', { method: 'PUT', body: JSON.stringify({ apiKey }) });
+
+export const removeApiKey = (): Promise<ApiKeyStatus> =>
+  authedFetch('/settings/api-key', { method: 'DELETE' });
