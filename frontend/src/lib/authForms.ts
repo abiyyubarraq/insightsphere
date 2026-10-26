@@ -7,6 +7,7 @@ export type AuthErrorKind =
   | 'email_not_confirmed'
   | 'same_password'
   | 'weak_password'
+  | 'user_exists'
   | 'unknown';
 
 export const AUTH_ERROR_MESSAGES: Record<AuthErrorKind, string> = {
@@ -15,6 +16,7 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorKind, string> = {
   email_not_confirmed: 'Confirm your email first, then sign in. Check your inbox for the link.',
   same_password: 'Choose a password different from your current one.',
   weak_password: 'That password is too weak. Try a longer one.',
+  user_exists: 'An account with this email already exists. Sign in instead.',
   unknown: 'Something went wrong. Please try again.',
 };
 
@@ -62,6 +64,15 @@ export const classifyRecoverError = (error: AuthErrorLike): AuthErrorKind | null
 export const classifySignInError = (error: AuthErrorLike): AuthErrorKind => {
   if (error.code === 'invalid_credentials') return 'invalid_credentials';
   if (error.code === 'email_not_confirmed') return 'email_not_confirmed';
+  return 'unknown';
+};
+
+// With "Confirm email" on, Supabase answers an existing email like a new one, so
+// user_already_exists only comes back when that setting is off.
+export const classifySignUpError = (error: AuthErrorLike): AuthErrorKind => {
+  if (error.code === 'user_already_exists') return 'user_exists';
+  if (error.code === 'weak_password') return 'weak_password';
+  if (error.code === 'email_address_invalid') return 'invalid_email';
   return 'unknown';
 };
 

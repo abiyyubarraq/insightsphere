@@ -1,3 +1,5 @@
+import { isStillCurrent } from './staleResponse';
+
 interface QueryResult<T> {
   data: T[] | null;
   error: { message: string } | null;
@@ -31,3 +33,46 @@ export const fetchNewestMessages = async <T>(
   const rows = data ?? [];
   return { messages: rows.slice(0, limit).reverse(), hasMore: rows.length > limit };
 };
+
+/** The same query, before the conversation filter is narrowed to older rows. */
+export interface OlderMessagesQuery<T> {
+  lt(column: 'created_at', value: string): ConversationMessagesQuery<T>;
+}
+
+/**
+ * The `limit` messages just before `before` (the created_at of the oldest one
+ * loaded), oldest first, and whether even older ones exist.
+ * User and assistant messages are saved by separate inserts, so their
+ * created_at differ and a strict `<` does not skip a message.
+ */
+export const fetchOlderMessages = <T>(
+  query: OlderMessagesQuery<T>,
+  before: string,
+  limit: number
+): Promise<{ messages: T[]; hasMore: boolean }> =>
+  fetchNewestMessages(query.lt('created_at', before), limit);
+
+/** Puts an older page above the loaded messages, skipping any id already shown. */
+export const prependPage = <T extends { id: string }>(loaded: T[], page: T[]): T[] => {
+  const shown = new Set(loaded.map((m) => m.id));
+  return [...page.filter((m) => !shown.has(m.id)), ...loaded];
+};
+
+export interface LoadedHistory<T> {
+  messages: T[];
+  hasMore: boolean;
+}
+
+/**
+ * Adds an older page to what is on screen, or returns `loaded` itself when the
+ * request is stale (another project, conversation or New chat since it was sent).
+ */
+export const applyOlderPage = <T extends { id: string }, S extends object>(
+  loaded: LoadedHistory<T>,
+  page: LoadedHistory<T>,
+  requestedFor: S,
+  currentFor: S
+): LoadedHistory<T> =>
+  isStillCurrent(requestedFor, currentFor)
+    ? { messages: prependPage(loaded.messages, page.messages), hasMore: page.hasMore }
+    : loaded;
