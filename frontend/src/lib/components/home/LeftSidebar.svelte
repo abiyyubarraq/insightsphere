@@ -7,6 +7,7 @@
     PanelLeftClose,
     Edit3,
     Trash2,
+    Ellipsis,
   } from 'lucide-svelte';
   import { projects, selectedProject, type Project } from '../../../stores/project';
   import UserHeader from './UserHeader.svelte';
@@ -32,7 +33,35 @@
     onRenameProject: (_project: Project) => void;
     onDeleteProject: (_project: Project) => void;
   }>();
+
+  // The project whose actions menu is open. One at a time.
+  let menuFor: string | null = $state(null);
+
+  const toggleMenu = (projectId: string) => {
+    menuFor = menuFor === projectId ? null : projectId;
+  };
+
+  const chooseFromMenu = (action: (_project: Project) => void, project: Project) => {
+    menuFor = null;
+    action(project);
+  };
+
+  // pointerdown, not focusout: Safari does not focus a clicked button, so a
+  // click elsewhere would never move focus out of the menu there.
+  const onWindowPointerDown = (event: PointerEvent) => {
+    if (!menuFor) return;
+    const menu = (event.target as Element | null)?.closest('[data-project-menu]');
+    if (menu?.getAttribute('data-project-menu') !== menuFor) menuFor = null;
+  };
+
+  const onWindowKeyDown = (event: KeyboardEvent) => {
+    if (!menuFor || event.key !== 'Escape') return;
+    document.querySelector<HTMLButtonElement>(`[data-project-menu="${menuFor}"] > button`)?.focus();
+    menuFor = null;
+  };
 </script>
+
+<svelte:window onpointerdown={onWindowPointerDown} onkeydown={onWindowKeyDown} />
 
 <!-- Below md it is an overlay that slides in; from md up it takes its place in the row. -->
 <aside
@@ -117,38 +146,71 @@
                 >
                   {project.name}
                 </button>
+                <!-- Always visible on touch and narrow screens; with a mouse from md
+                     up it stays quiet until the row is hovered or focused. -->
                 <div
-                  class="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                  class="relative transition-opacity {menuFor === project.id
+                    ? ''
+                    : 'md:pointer-fine:opacity-0 md:pointer-fine:group-hover:opacity-100 md:pointer-fine:group-focus-within:opacity-100'}"
+                  data-project-menu={project.id}
                 >
                   <button
+                    type="button"
                     class="btn btn-ghost btn-xs btn-square"
-                    title="Rename project"
-                    aria-label="Rename project"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      onRenameProject(project);
-                    }}
+                    aria-label="Project actions"
+                    aria-expanded={menuFor === project.id}
+                    aria-controls="project-menu-{project.id}"
+                    onclick={() => toggleMenu(project.id)}
                   >
-                    <Edit3 class="w-3.5 h-3.5" />
+                    <Ellipsis class="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
-                  <button
-                    class="btn btn-ghost btn-xs btn-square text-error hover:bg-error/20"
-                    title="Delete project"
-                    aria-label="Delete project"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      onDeleteProject(project);
-                    }}
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                  </button>
+                  {#if menuFor === project.id}
+                    <ul
+                      id="project-menu-{project.id}"
+                      class="menu menu-sm absolute right-0 top-full z-10 mt-1 w-36 rounded-box border border-base-content/10 bg-base-100 p-1"
+                    >
+                      <li>
+                        <button
+                          type="button"
+                          class="gap-2"
+                          onclick={() => chooseFromMenu(onRenameProject, project)}
+                        >
+                          <Edit3 class="w-3.5 h-3.5" aria-hidden="true" />
+                          Rename
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          type="button"
+                          class="gap-2 text-error"
+                          onclick={() => chooseFromMenu(onDeleteProject, project)}
+                        >
+                          <Trash2 class="w-3.5 h-3.5" aria-hidden="true" />
+                          Delete
+                        </button>
+                      </li>
+                    </ul>
+                  {/if}
                 </div>
               </div>
             {/each}
           </div>
         </div>
       {:else}
-        <p class="mt-6 px-3 text-sm text-base-content/50">No projects yet</p>
+        <div class="mt-6 px-3">
+          <p class="text-sm text-base-content/70">No projects yet</p>
+          <p class="mt-1 text-xs text-base-content/60">
+            A project holds the documents you ask questions about.
+          </p>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm -ml-3 mt-2 gap-2 font-normal"
+            onclick={() => onNavClick('new-project')}
+          >
+            <Plus class="w-4 h-4" aria-hidden="true" />
+            New project
+          </button>
+        </div>
       {/if}
     </div>
 

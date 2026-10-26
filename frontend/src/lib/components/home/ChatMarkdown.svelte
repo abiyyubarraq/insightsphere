@@ -78,10 +78,41 @@
   }
 
   /* Lists */
+  /* Tailwind's preflight removes list markers, so they are set again here. */
   .chat-markdown :global(ul),
   .chat-markdown :global(ol) {
     margin: 0.5rem 0;
     padding-left: 1.5rem;
+    list-style-position: outside;
+  }
+
+  .chat-markdown :global(ul) {
+    list-style-type: disc;
+  }
+
+  .chat-markdown :global(ol) {
+    list-style-type: decimal;
+  }
+
+  .chat-markdown :global(li ul) {
+    list-style-type: circle;
+  }
+
+  .chat-markdown :global(li li ul) {
+    list-style-type: square;
+  }
+
+  .chat-markdown :global(li ol) {
+    list-style-type: lower-alpha;
+  }
+
+  .chat-markdown :global(li > ul),
+  .chat-markdown :global(li > ol) {
+    margin: 0;
+  }
+
+  .chat-markdown :global(li::marker) {
+    color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
   }
 
   .chat-markdown :global(li) {

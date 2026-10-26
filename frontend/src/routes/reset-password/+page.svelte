@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { Eye, EyeOff, Loader2 } from 'lucide-svelte';
+  import { Loader2 } from 'lucide-svelte';
   import AuthShell from '$lib/components/auth/AuthShell.svelte';
+  import PasswordField from '$lib/components/auth/PasswordField.svelte';
   import {
     AUTH_ERROR_MESSAGES,
     AuthFormError,
@@ -16,8 +17,6 @@
   let done = $state(false);
   let password = $state('');
   let confirm = $state('');
-  let showPassword = $state(false);
-  let showConfirm = $state(false);
   let saving = $state(false);
   let error = $state('');
   let passwordInput: HTMLInputElement | undefined = $state();
@@ -110,62 +109,32 @@
   </div>
 
   {#if view === 'invalid'}
-    <a href="/forgot-password" class="btn btn-outline w-full border-base-content/20">Request a new link</a>
+    <a href="/forgot-password" class="btn btn-outline w-full border-base-content/20">
+      Request a new link
+    </a>
   {:else if view === 'form'}
     <form class="space-y-6" novalidate onsubmit={handleSubmit}>
       <div class="space-y-2">
-        <label for="new-password" class="block text-sm font-medium">New password</label>
-        <div class="input w-full pr-1">
-          <input
-            id="new-password"
-            type={showPassword ? 'text' : 'password'}
-            autocomplete="new-password"
-            bind:value={password}
-            bind:this={passwordInput}
-            aria-invalid={!!error}
-            aria-describedby="password-error"
-            class="grow text-base"
-          />
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm btn-square"
-            aria-label={showPassword ? 'Hide new password' : 'Show new password'}
-            onclick={() => (showPassword = !showPassword)}
-          >
-            {#if showPassword}
-              <EyeOff class="w-4 h-4" aria-hidden="true" />
-            {:else}
-              <Eye class="w-4 h-4" aria-hidden="true" />
-            {/if}
-          </button>
-        </div>
+        <PasswordField
+          id="new-password"
+          label="New password"
+          autocomplete="new-password"
+          describedby="password-error"
+          invalid={!!error}
+          bind:value={password}
+          bind:input={passwordInput}
+        />
       </div>
 
       <div class="space-y-2">
-        <label for="confirm-password" class="block text-sm font-medium">Confirm password</label>
-        <div class="input w-full pr-1">
-          <input
-            id="confirm-password"
-            type={showConfirm ? 'text' : 'password'}
-            autocomplete="new-password"
-            bind:value={confirm}
-            aria-invalid={!!error}
-            aria-describedby="password-error"
-            class="grow text-base"
-          />
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm btn-square"
-            aria-label={showConfirm ? 'Hide confirm password' : 'Show confirm password'}
-            onclick={() => (showConfirm = !showConfirm)}
-          >
-            {#if showConfirm}
-              <EyeOff class="w-4 h-4" aria-hidden="true" />
-            {:else}
-              <Eye class="w-4 h-4" aria-hidden="true" />
-            {/if}
-          </button>
-        </div>
+        <PasswordField
+          id="confirm-password"
+          label="Confirm password"
+          autocomplete="new-password"
+          describedby="password-error"
+          invalid={!!error}
+          bind:value={confirm}
+        />
         <p id="password-error" aria-live="polite" class="min-h-5 text-sm text-error">{error}</p>
       </div>
 

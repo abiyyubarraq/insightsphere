@@ -1,5 +1,6 @@
 import { createClient, type User } from '@supabase/supabase-js';
 import type {
+  ChatCitation,
   ChatMessage,
   GetConversationHistoryResponse,
   SendMessageRequest,
@@ -7,7 +8,8 @@ import type {
 } from '../../../shared/types/chat';
 import { RETRIEVAL_DEFAULTS } from '../../../shared/constants/index';
 import type { Project, ProjectFile } from '../stores/project';
-import { fetchNewestMessages } from '../lib/chatHistory';
+import { fetchNewestMessages, fetchOlderMessages } from '../lib/chatHistory';
+import { signOutThisBrowser } from '../lib/signOut';
 import type { ListFilesResponse } from '../../../shared/types/index';
 import {
   AuthFormError,
@@ -144,7 +146,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 const assertSessionValid = async (response: Response): Promise<void> => {
   if (response.status !== 401) return;
 
-  await supabase.auth.signOut().catch(() => {});
+  await signOutThisBrowser(supabase).catch(() => {});
 
   if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
     window.location.href = '/login';
@@ -208,7 +210,7 @@ export const updatePassword = async (password: string): Promise<void> => {
 
 // Sign-Out
 export const logout = async (): Promise<void> => {
-  const { error } = await supabase.auth.signOut();
+  const { error } = await signOutThisBrowser(supabase);
   if (error) throw new Error(error.message);
 };
 
@@ -466,6 +468,39 @@ export const searchFiles = async (
   return data;
 };
 
+/** Adds each assistant message's citations, best score first, as the chat route returns them. */
+const attachCitations = async (messages: ChatMessage[]): Promise<ChatMessage[]> => {
+  const assistantMessageIds = messages.filter((m) => m.role === 'assistant').map((m) => m.id);
+
+  let citations: ChatCitation[] = [];
+  if (assistantMessageIds.length > 0) {
+    const { data: citationsData, error: citationsError } = await supabase
+      .from('chat_citations')
+      .select('*')
+      .in('message_id', assistantMessageIds)
+      .order('similarity_score', { ascending: false });
+
+    if (citationsError) {
+      console.warn('Failed to get citations:', citationsError);
+    } else {
+      citations = citationsData || [];
+    }
+  }
+
+  const citationsByMessage = citations.reduce(
+    (acc, citation) => {
+      (acc[citation.message_id] ??= []).push(citation);
+      return acc;
+    },
+    {} as Record<string, ChatCitation[]>
+  );
+
+  return messages.map((message) => ({
+    ...message,
+    citations: message.role === 'assistant' ? citationsByMessage[message.id] || [] : undefined,
+  }));
+};
+
 /**
  * Get conversation history for a project (direct Supabase query)
  */
@@ -516,54 +551,30 @@ export const getConversationHistory = async (
       limit
     );
 
-    // Get citations for assistant messages
-    const assistantMessageIds =
-      messages?.filter((m) => m.role === 'assistant').map((m) => m.id) || [];
-
-    let citations: any[] = [];
-    if (assistantMessageIds.length > 0) {
-      const { data: citationsData, error: citationsError } = await supabase
-        .from('chat_citations')
-        .select('*')
-        .in('message_id', assistantMessageIds)
-        .order('similarity_score', { ascending: false });
-
-      if (citationsError) {
-        console.warn('Failed to get citations:', citationsError);
-      } else {
-        citations = citationsData || [];
-      }
-    }
-
-    // Group citations by message_id
-    const citationsByMessage = citations.reduce(
-      (acc, citation) => {
-        if (!acc[citation.message_id]) {
-          acc[citation.message_id] = [];
-        }
-        acc[citation.message_id].push(citation);
-        return acc;
-      },
-      {} as Record<string, any[]>
-    );
-
-    // Attach citations to messages
-    const messagesWithCitations =
-      messages?.map((message) => ({
-        ...message,
-        citations: message.role === 'assistant' ? citationsByMessage[message.id] || [] : undefined,
-      })) || [];
-
     return {
       success: true,
       conversation,
-      messages: messagesWithCitations,
+      messages: await attachCitations(messages),
       has_more: hasMore,
     };
   } catch (error) {
     console.error('Failed to get conversation history:', error);
     throw new Error(error instanceof Error ? error.message : 'Failed to load conversation history');
   }
+};
+
+/** The page of messages just before `before`, the created_at of the oldest one on screen. */
+export const getOlderMessages = async (
+  conversationId: string,
+  before: string,
+  limit = 50
+): Promise<{ messages: ChatMessage[]; hasMore: boolean }> => {
+  const { messages, hasMore } = await fetchOlderMessages<ChatMessage>(
+    supabase.from('chat_messages').select('*').eq('conversation_id', conversationId),
+    before,
+    limit
+  );
+  return { messages: await attachCitations(messages), hasMore };
 };
 
 /**

@@ -7,12 +7,16 @@
     autocomplete,
     describedby,
     value = $bindable(''),
+    invalid = false,
+    input = $bindable(),
   }: {
     id: string;
     label: string;
     autocomplete: 'current-password' | 'new-password';
     describedby: string;
     value?: string;
+    invalid?: boolean;
+    input?: HTMLInputElement;
   } = $props();
 
   let visible = $state(false);
@@ -26,6 +30,8 @@
     type={visible ? 'text' : 'password'}
     {autocomplete}
     bind:value
+    bind:this={input}
+    aria-invalid={invalid}
     aria-describedby={describedby}
     class="grow text-base"
   />

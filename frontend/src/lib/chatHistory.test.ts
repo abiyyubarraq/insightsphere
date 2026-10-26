@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fetchNewestMessages, type ConversationMessagesQuery } from './chatHistory';
+import {
+  applyOlderPage,
+  fetchNewestMessages,
+  fetchOlderMessages,
+  prependPage,
+  type ConversationMessagesQuery,
+  type OlderMessagesQuery,
+} from './chatHistory';
 
 interface Row {
   id: string;
@@ -99,5 +106,132 @@ describe('loading the newest chat messages', () => {
     await expect(fetchNewestMessages(query, 50)).rejects.toThrow(
       'Failed to get messages: permission denied'
     );
+  });
+});
+
+/** Fake query that also supports the `lt` cursor filter. */
+const fakeOlderQuery = (rows: Row[]) => {
+  const recorded: Recorded & { lt?: [string, string] } = {};
+  const query: OlderMessagesQuery<Row> = {
+    lt: (column, value) => {
+      recorded.lt = [column, value];
+      const inner = fakeQuery(rows.filter((r) => r.created_at < value));
+      return {
+        order: (orderColumn, options) => {
+          recorded.order = [orderColumn, options];
+          return {
+            limit: (count) => {
+              recorded.limit = count;
+              return inner.query.order(orderColumn, options).limit(count);
+            },
+          };
+        },
+      };
+    },
+  };
+  return { query, recorded };
+};
+
+const created = (row: Row) => row.created_at;
+
+describe('loading older chat messages', () => {
+  // 120 rows with distinct times, like the seeded conversation.
+  const rows = Array.from({ length: 120 }, (_, i) => ({
+    id: `m-${String(i).padStart(3, '0')}`,
+    created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+  }));
+
+  // An ascending query with a limit, or a missing cursor, would return the
+  // oldest rows again instead of the ones just above what is on screen.
+  it('asks for limit + 1 rows older than the cursor, newest first', async () => {
+    const { query, recorded } = fakeOlderQuery(rows);
+
+    await fetchOlderMessages(query, rows[70].created_at, 50);
+
+    expect(recorded).toEqual({
+      lt: ['created_at', rows[70].created_at],
+      order: ['created_at', { ascending: false }],
+      limit: 51,
+    });
+  });
+
+  it('returns the 50 messages just before the cursor, oldest first', async () => {
+    const { query } = fakeOlderQuery(rows);
+
+    const { messages, hasMore } = await fetchOlderMessages(query, rows[70].created_at, 50);
+
+    expect(messages.map(created)).toEqual(rows.slice(20, 70).map(created));
+    expect(hasMore).toBe(true);
+  });
+
+  // The last page must hide the button, or it stays and loads nothing.
+  it('reports no more history on the last, short page', async () => {
+    const { query } = fakeOlderQuery(rows);
+
+    const { messages, hasMore } = await fetchOlderMessages(query, rows[20].created_at, 50);
+
+    expect(messages).toHaveLength(20);
+    expect(hasMore).toBe(false);
+  });
+
+  it('returns an empty page when nothing is older', async () => {
+    const { query } = fakeOlderQuery(rows);
+
+    expect(await fetchOlderMessages(query, rows[0].created_at, 50)).toEqual({
+      messages: [],
+      hasMore: false,
+    });
+  });
+});
+
+describe('adding an older page to the chat', () => {
+  const loaded = [
+    { id: 'c', created_at: '3' },
+    { id: 'd', created_at: '4' },
+  ];
+
+  it('puts the older page above the loaded messages', () => {
+    const page = [
+      { id: 'a', created_at: '1' },
+      { id: 'b', created_at: '2' },
+    ];
+    expect(prependPage(loaded, page).map((m) => m.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  // Svelte's keyed each throws on a duplicate key, so an overlap between two
+  // pages would break the whole chat.
+  it('skips a message that is already on screen', () => {
+    const page = [
+      { id: 'b', created_at: '2' },
+      { id: 'c', created_at: '3' },
+    ];
+    expect(prependPage(loaded, page).map((m) => m.id)).toEqual(['b', 'c', 'd']);
+  });
+
+  it('keeps the list as it was for an empty page', () => {
+    expect(prependPage(loaded, [])).toEqual(loaded);
+  });
+
+  it('applies the page and its hasMore when the request is still current', () => {
+    const state = { messages: loaded, hasMore: true };
+    const page = { messages: [{ id: 'a', created_at: '1' }], hasMore: false };
+    const at = { conversationId: 'c1', projectId: 'p1', generation: 1 };
+
+    const next = applyOlderPage(state, page, at, { ...at });
+
+    expect(next.messages.map((m) => m.id)).toEqual(['a', 'c', 'd']);
+    expect(next.hasMore).toBe(false);
+  });
+
+  // A page that returned after the user switched project or pressed New chat
+  // was prepended into the other conversation.
+  it('leaves the list and hasMore unchanged for a stale page', () => {
+    const state = { messages: loaded, hasMore: true };
+    const page = { messages: [{ id: 'a', created_at: '1' }], hasMore: false };
+    const requested = { conversationId: 'c1', projectId: 'p1', generation: 1 };
+
+    const next = applyOlderPage(state, page, requested, { ...requested, generation: 2 });
+
+    expect(next).toBe(state);
   });
 });
