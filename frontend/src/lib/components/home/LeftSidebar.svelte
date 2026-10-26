@@ -7,6 +7,7 @@
     PanelLeftClose,
     Edit3,
     Trash2,
+    Settings,
     Ellipsis,
   } from 'lucide-svelte';
   import { projects, selectedProject, type Project } from '../../../stores/project';
@@ -215,6 +216,13 @@
     </div>
 
     <div class="border-t border-base-content/10 p-3">
+      <a
+        href="/settings"
+        class="btn btn-ghost btn-sm h-9 w-full justify-start gap-3 font-normal mb-1"
+      >
+        <Settings class="w-4 h-4" />
+        Settings
+      </a>
       <UserHeader />
     </div>
   </div>
