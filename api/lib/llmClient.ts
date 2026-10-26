@@ -23,6 +23,8 @@ export interface AnswerOptions {
    * produced, but the model is told not to stretch the context to cover the
    * question. */
   lowConfidence?: boolean;
+  /** How many chunks the context holds, so the prompt can name the valid ids. */
+  sourceCount?: number;
 }
 
 export interface LLMClient {
@@ -50,7 +52,7 @@ export class OpenAILLMClient implements LLMClient {
     query: string,
     options: AnswerOptions = {},
   ): Promise<LLMResponse> {
-    const { conversationHistory, lowConfidence = false } = options;
+    const { conversationHistory, lowConfidence = false, sourceCount } = options;
 
     try {
       console.log(`🤖 Calling OpenAI LLM: ${this.model}`);
@@ -74,6 +76,10 @@ export class OpenAILLMClient implements LLMClient {
         "### Response Requirements",
         "Provide a clear, factual answer based on the context above.",
         "Include citations using [doc_id: N] format (numeric only, e.g., [doc_id: 1] or [doc_id: 1, 2]).",
+        sourceCount ? citationRangeLine(sourceCount) : "",
+        sourceCount && conversationHistory
+          ? "Earlier answers had their source numbers removed. The doc_id numbers refer only to the context above, never to the previous conversation."
+          : "",
         conversationHistory
           ? "Consider the previous conversation when answering, but base your response on the provided document context."
           : "",
@@ -157,6 +163,12 @@ export class OpenAILLMClient implements LLMClient {
       );
     }
   }
+}
+
+function citationRangeLine(sourceCount: number): string {
+  return sourceCount === 1
+    ? "Cite only doc_id 1. No other doc_id exists."
+    : `Cite only doc_id 1 to ${sourceCount}. No other doc_id exists.`;
 }
 
 export class LLMClientFactory {

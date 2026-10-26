@@ -29,6 +29,7 @@ import { openAIForUser } from "../../lib/userOpenAI.ts";
 import type { HistoryTurn } from "../../lib/queryRewrite.ts";
 import { answerThenSave } from "../../lib/chatExchange.ts";
 import { checkBodyConversation } from "../../lib/conversationAccess.ts";
+import { historyForPrompt } from "../../lib/citationMarkers.ts";
 import type {
   SendMessageRequest,
   SendMessageResponse,
@@ -118,17 +119,13 @@ export async function sendChatMessage(c: Context) {
       );
 
       if (recentMessages.length > 0) {
-        conversationContext = chatService.buildConversationalContext(
-          recentMessages,
-        );
         // The same history in two shapes: formatted prose for the answering
         // model, turns for the query rewrite that retrieval depends on.
-        conversationTurns = recentMessages
-          .filter((message) => message.role !== "system")
-          .map((message) => ({
-            role: message.role as HistoryTurn["role"],
-            content: message.content,
-          }));
+        const history = historyForPrompt(recentMessages);
+        conversationContext = chatService.buildConversationalContext(
+          history.messages,
+        );
+        conversationTurns = history.turns;
         console.log(
           `🔄 Including ${recentMessages.length} previous messages for context`,
         );
