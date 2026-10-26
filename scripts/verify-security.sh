@@ -100,6 +100,84 @@ s=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/v1/search/query" \
     -H 'Content-Type: application/json' -d '{"query":"x","project_id":"00000000-0000-0000-0000-000000000000"}')
 [ "$s" = "401" ] && ok "Bearer undefined -> 401" || bad "Bearer undefined -> $s (expected 401)"
 
+echo "== chat with someone else's conversation_id must fail =="
+# Two throwaway users. Deleting a user cascades to its projects, conversations
+# and messages. The API answers 404 before any OpenAI call, so this costs nothing.
+SERVICE=$(get SUPABASE_SERVICE_ROLE_KEY)
+created_users=()
+cleanup_users() {
+  for id in "${created_users[@]}"; do
+    curl -s -o /dev/null -X DELETE "$URL/auth/v1/admin/users/$id" \
+      -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE"
+  done
+}
+trap cleanup_users EXIT
+
+first_id() { grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4; }
+service_insert() {
+  curl -s -X POST "$URL/rest/v1/$1" -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE" \
+    -H "Content-Type: application/json" -H "Prefer: return=representation" -d "$2" | first_id
+}
+# Email confirmation is required on this project, so the admin API confirms it.
+# Sets made_id and made_token. Not run in a subshell, so the cleanup list keeps
+# every user that was created, even when a later step fails.
+make_user() {
+  made_id=""; made_token=""
+  local email
+  email="ship-test-$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')@example.com"
+  made_id=$(curl -s -X POST "$URL/auth/v1/admin/users" -H "apikey: $SERVICE" \
+       -H "Authorization: Bearer $SERVICE" -H "Content-Type: application/json" \
+       -d '{"email":"'"$email"'","password":"'"$PASS"'","email_confirm":true}' | first_id)
+  [ -n "$made_id" ] || return 1
+  created_users+=("$made_id")
+  made_token=$(curl -s -X POST "$URL/auth/v1/token?grant_type=password" -H "apikey: $ANON" \
+       -H "Content-Type: application/json" -d '{"email":"'"$email"'","password":"'"$PASS"'"}' \
+       | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+  [ -n "$made_token" ]
+}
+message_count() {
+  curl -s "$URL/rest/v1/chat_messages?select=id&conversation_id=eq.$1" \
+    -H "apikey: $SERVICE" -H "Authorization: Bearer $SERVICE" | grep -o '"id"' | wc -l | tr -d ' '
+}
+chat_as() {
+  curl -s -o /dev/null -w '%{http_code}' -X POST "$API/v1/projects/$2/chat" \
+    -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
+    -d '{"message":"ship-test","conversation_id":"'"$3"'"}'
+}
+
+conversation_check() {
+  [ -n "$SERVICE" ] || { bad "SUPABASE_SERVICE_ROLE_KEY missing from $ENV_FILE"; return; }
+  PASS="Pw-$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
+  make_user || { bad "could not create and sign in ship-test- user A"; return; }
+  local a_id=$made_id a_token=$made_token
+  make_user || { bad "could not create and sign in ship-test- user B"; return; }
+  local b_id=$made_id b_token=$made_token
+
+  local a_project b_project a_conv
+  a_project=$(service_insert projects '{"name":"ship-test-a","user_id":"'"$a_id"'"}')
+  b_project=$(service_insert projects '{"name":"ship-test-b","user_id":"'"$b_id"'"}')
+  a_conv=$(service_insert chat_conversations \
+    '{"project_id":"'"$a_project"'","user_id":"'"$a_id"'","title":"ship-test"}')
+  if [ -z "$a_project" ] || [ -z "$b_project" ] || [ -z "$a_conv" ]; then
+    bad "could not create the test projects and conversation"; return
+  fi
+  service_insert chat_messages \
+    '{"conversation_id":"'"$a_conv"'","role":"user","content":"ship-test question"}' >/dev/null
+
+  local before after s
+  before=$(message_count "$a_conv")
+  s=$(chat_as "$b_token" "$b_project" "$a_conv")
+  [ "$s" = "404" ] && ok "B chats in B's project with A's conversation_id -> 404" \
+                   || bad "B chats in B's project with A's conversation_id -> $s (expected 404)"
+  after=$(message_count "$a_conv")
+  [ "$before" = "$after" ] && ok "A's conversation unchanged ($after messages)" \
+                           || bad "A's conversation changed: $before -> $after messages"
+  s=$(chat_as "$a_token" "$b_project" "$a_conv")
+  [ "$s" = "403" ] && ok "A chats in B's project -> 403" \
+                   || bad "A chats in B's project -> $s (expected 403)"
+}
+conversation_check
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -10,6 +10,7 @@
 import { type SupabaseClient } from "@supabase/supabase-js";
 import type { ChatConversation, ChatMessage } from "../../shared/types/chat.ts";
 import type { RAGQueryResult } from "./ragService.ts";
+import type { ConversationOwner } from "./conversationAccess.ts";
 
 export class ChatService {
   constructor(private supabase: SupabaseClient) {}
@@ -28,6 +29,17 @@ export class ChatService {
 
     if (error) throw new Error(`Failed to look up conversation: ${error.message}`);
     return data as ChatConversation | null;
+  }
+
+  async getConversationById(id: string): Promise<ConversationOwner | null> {
+    const { data, error } = await this.supabase
+      .from("chat_conversations")
+      .select("id, user_id, project_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to look up conversation: ${error.message}`);
+    return data as ConversationOwner | null;
   }
 
   /**
