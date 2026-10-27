@@ -17,6 +17,8 @@ import { supabaseService } from "../../lib/supabaseClient.ts";
 import { ragService } from "../../lib/ragService.ts";
 import { ChatService } from "../../lib/chatService.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
+import { knowledgeFor } from "../../lib/projectKnowledge.ts";
+import { pickChatOptions } from "../../lib/queryOptions.ts";
 import { currentUser } from "../../lib/auth.ts";
 import {
   chargeUserQuota,
@@ -53,7 +55,8 @@ export async function sendChatMessage(c: Context) {
 
     // Parse request body
     const body = await c.req.json() as SendMessageRequest;
-    const { message, conversation_id, options = {} } = body;
+    const { message, conversation_id } = body;
+    const options = pickChatOptions(body.options);
 
     if (!message?.trim()) {
       return c.json({
@@ -109,13 +112,10 @@ export async function sendChatMessage(c: Context) {
     // message is saved, so the question being asked is not in its own history.
     let conversationContext = "";
     let conversationTurns: HistoryTurn[] = [];
-    const useHistory = options.use_conversation_history !== false; // Default true
-
-    if (useHistory && existingConversationId) {
-      const maxHistoryMessages = options.max_history_messages || 6;
+    if (options.use_conversation_history && existingConversationId) {
       const recentMessages = await chatService.getRecentMessagesForContext(
         existingConversationId,
-        maxHistoryMessages,
+        options.max_history_messages,
       );
 
       if (recentMessages.length > 0) {
@@ -134,8 +134,8 @@ export async function sendChatMessage(c: Context) {
 
     // Execute RAG query with conversation context
     const ragOptions = {
-      max_chunks: options.max_chunks ?? SEARCH_DEFAULTS.maxChunks,
-      similarity_threshold: options.similarity_threshold ?? SEARCH_DEFAULTS.threshold,
+      max_chunks: options.max_chunks,
+      similarity_threshold: SEARCH_DEFAULTS.threshold,
       use_short_context: false,
       max_context_length: SEARCH_DEFAULTS.maxContextLength,
       conversation_history: conversationContext, // Pass to RAG service
@@ -150,7 +150,14 @@ export async function sendChatMessage(c: Context) {
     } = await answerThenSave({
       conversationId: existingConversationId,
       answer: () =>
-        ragService.queryProject(projectId, user.id, message, openai, ragOptions),
+        ragService.queryProject(
+          projectId,
+          user.id,
+          message,
+          openai,
+          ragOptions,
+          knowledgeFor(projectId, openai.client),
+        ),
       ensureConversation: async () => {
         const conversation = await chatService.getOrCreateConversation(
           projectId,
@@ -176,7 +183,10 @@ export async function sendChatMessage(c: Context) {
       .from("chat_citations")
       .select("*")
       .eq("message_id", assistantMessage.id)
-      .order("similarity_score", { ascending: false });
+      .order("similarity_score", { ascending: false })
+      // Overview citations all score 0. Without this their order is not
+      // defined, and chip N would open the wrong source.
+      .order("chunk_index", { ascending: true });
 
     const totalTime = Date.now() - startTime;
     console.log(`✅ Chat message processed in ${totalTime}ms`);
@@ -196,6 +206,7 @@ export async function sendChatMessage(c: Context) {
         chunks_retrieved: ragResult.metadata.chunks_retrieved,
         context_length: ragResult.metadata.context_length,
         llm_model: ragResult.metadata.llm_model,
+        route: ragResult.metadata.route,
       },
     };
 

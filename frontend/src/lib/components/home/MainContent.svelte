@@ -28,6 +28,7 @@
   import { canRetryHistory, emptyChatState, loadHistory, needsChatReset } from '$lib/chatState';
   import { isStillCurrent } from '$lib/staleResponse';
   import { readSuggestions, suggestionsKey, type SuggestionsView } from '$lib/suggestions';
+  import { offTopicChips, routeLabel } from '$lib/chatRoute';
 
   let {
     leftSidebarOpen = $bindable(),
@@ -87,6 +88,7 @@
   let showEmptyChat = $derived(!hasMessages && !loadingHistory);
   let hasMore = $state(false);
   let loadingOlder = $state(false);
+  let offTopic = $derived(offTopicChips(chatMessages));
 
   // Not reactive: only the send, stop and cleanup code read it.
   let pending: { controller: AbortController; assistantId: string } | null = null;
@@ -484,6 +486,24 @@
   };
 </script>
 
+{#snippet questionChips(questions: string[], label: string, testid: string)}
+  <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label={label} data-testid={testid}>
+    {#each questions as question, index (index)}
+      <li class="flex">
+        <button
+          type="button"
+          class="flex min-h-11 w-full cursor-pointer items-center rounded-xl border border-base-content/15 bg-transparent px-3 py-2 text-left text-sm leading-5 text-base-content/80 transition-colors hover:border-base-content/30 hover:bg-base-200 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+          title={question}
+          disabled={chatLoading}
+          onclick={() => handleSendMessage(question)}
+        >
+          <span class="line-clamp-2">{question}</span>
+        </button>
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
 {#snippet historyError()}
   <div class="px-1" data-testid="history-error">
     <div role="alert">
@@ -671,6 +691,16 @@
                       <span class="loading loading-dots loading-sm"></span>
                     {/if}
 
+                    {#if offTopic?.messageId === message.id}
+                      <div class="mt-4">
+                        {@render questionChips(
+                          offTopic.questions,
+                          'Questions the documents can answer',
+                          'off-topic-suggestions'
+                        )}
+                      </div>
+                    {/if}
+
                     <!-- The API decides what counts as weak, so the floor
                          lives in one place and history keeps the flag. -->
                     {#if message.role === 'assistant' && message.metadata?.low_confidence && message.citations?.length}
@@ -718,9 +748,12 @@
                                 <div class="text-base-content/60 mt-1 line-clamp-2">
                                   {citation.text_snippet}
                                 </div>
-                                <div class="text-base-content/60 mt-1">
-                                  Relevance: {(citation.similarity_score * 100).toFixed(0)}%
-                                </div>
+                                <!-- An overview source is a whole summary, not a scored match. -->
+                                {#if message.metadata?.route !== 'overview'}
+                                  <div class="text-base-content/60 mt-1">
+                                    Relevance: {(citation.similarity_score * 100).toFixed(0)}%
+                                  </div>
+                                {/if}
                               </div>
                             </div>
                           {/each}
@@ -777,13 +810,8 @@
 
                     <!-- Metadata for assistant messages -->
                     {#if message.role === 'assistant' && message.metadata}
-                      <div class="mt-2 text-xs text-base-content/60">
-                        {#if message.metadata.processing_time_ms}
-                          {(message.metadata.processing_time_ms / 1000).toFixed(1)}s
-                        {/if}
-                        {#if message.metadata.llm_model}
-                          • {message.metadata.llm_model}
-                        {/if}
+                      <div class="mt-2 text-xs text-base-content/60" data-testid="answer-meta">
+                        {routeLabel(message.metadata, message.citations?.length ?? 0)}
                       </div>
                     {/if}
                   </div>
@@ -873,25 +901,11 @@
                     {/each}
                   </div>
                 {:else if suggestionsFor !== null && suggestionsView.status === 'chips'}
-                  <ul
-                    class="grid grid-cols-1 gap-2 sm:grid-cols-2"
-                    aria-label="Suggested questions"
-                    data-testid="suggestions"
-                  >
-                    {#each suggestionsView.suggestions as question, index (index)}
-                      <li class="flex">
-                        <button
-                          type="button"
-                          class="flex min-h-11 w-full cursor-pointer items-center rounded-xl border border-base-content/15 bg-transparent px-3 py-2 text-left text-sm leading-5 text-base-content/80 transition-colors hover:border-base-content/30 hover:bg-base-200 hover:text-base-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-                          title={question}
-                          disabled={chatLoading}
-                          onclick={() => handleSendMessage(question)}
-                        >
-                          <span class="line-clamp-2">{question}</span>
-                        </button>
-                      </li>
-                    {/each}
-                  </ul>
+                  {@render questionChips(
+                    suggestionsView.suggestions,
+                    'Suggested questions',
+                    'suggestions'
+                  )}
                 {:else if suggestionsFor !== null && suggestionsView.status === 'empty'}
                   <p class="px-1 text-sm text-base-content/60" data-testid="suggestions-empty">
                     <button

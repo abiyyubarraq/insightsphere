@@ -33,6 +33,8 @@ Asking a question embeds it with the *same* model, searches only that project's 
 
 A follow-up question is rewritten into one that stands on its own before it is searched for, because "and what about the second one?" matches nothing on its own. Both the original and the rewrite are searched and the two result lists are fused, since a rewrite used alone retrieves worse than a rewrite plus the original. When the best chunk is still a weak match the answer is given anyway, and labelled as one.
 
+Before any search, a small model call sorts the question into one of three kinds. A question about the documents as a whole ("what is the point of these papers?") matches no single chunk well enough to pass the similarity threshold, so it is answered from the stored document summaries instead, with one citation per document. A question that has nothing to do with the documents gets a short reply and a few example questions, and no search or answer is paid for. Everything else, and every case where that call fails or times out, takes the normal search path.
+
 ---
 
 ## Design decisions
