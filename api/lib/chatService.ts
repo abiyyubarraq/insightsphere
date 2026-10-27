@@ -146,6 +146,9 @@ export class ChatService {
             llm_model: ragResult.metadata.llm_model,
             embedding_model: ragResult.metadata.embedding_model,
             context_length: ragResult.metadata.context_length,
+            route: ragResult.metadata.route,
+            // Kept so a reload shows the same chips under an off-topic reply.
+            suggestions: ragResult.metadata.suggestions,
           },
         })
         .select()

@@ -23,6 +23,20 @@ import {
   REWRITE_MODEL,
 } from "./queryRewrite.ts";
 import {
+  type CompleteRoute,
+  ROUTER_MAX_TOKENS,
+  ROUTER_MODEL,
+  routeQuestion,
+} from "./questionRouter.ts";
+import { buildOverview } from "./overview.ts";
+import {
+  FALLBACK_SUGGESTIONS,
+  type LoadSummaries,
+  SUGGESTION_MAX_DOCS,
+  type SuggestionDoc,
+} from "./suggestions.ts";
+import type { ChatRoute } from "../../shared/types/chat.ts";
+import {
   CANDIDATE_DEPTH,
   dropDuplicateChunks,
   fuseByRRF,
@@ -65,8 +79,27 @@ export interface RAGQueryResult {
     llm_model: string;
     processing_time_ms: number;
     context_length: number;
+    route: ChatRoute;
+    /** Only on an off_topic reply. */
+    suggestions?: string[];
   };
 }
+
+/**
+ * The project's documents, for the router and the overview path. Built per
+ * request from a project id the route has already checked access to.
+ */
+export interface ProjectKnowledge {
+  /** Every ready document, newest first. */
+  listDocuments(): Promise<SuggestionDoc[]>;
+  loadSummaries: LoadSummaries;
+  /** Example questions; may fall back to a fixed list. */
+  suggestions(docs: SuggestionDoc[]): Promise<string[]>;
+}
+
+export const OFF_TOPIC_ANSWER =
+  "I can only answer from the documents in this project. Try one of these:";
+export const OFF_TOPIC_CHIPS = 3;
 
 export type RAGOpenAI = Pick<
   OpenAIClient,
@@ -95,6 +128,8 @@ export class RAGService {
     query: string,
     openai: ChosenClient<RAGOpenAI>,
     options: RAGQueryOptions = {},
+    /** Absent: no router runs and every question takes the search path. */
+    knowledge?: ProjectKnowledge,
   ): Promise<RAGQueryResult> {
     const { client, own } = openai;
     const startTime = Date.now();
@@ -127,14 +162,48 @@ export class RAGService {
           })`,
       );
 
-      // Step 2: Embed whichever queries we are searching with
+      // Step 2: Decide the kind of question, on its rewritten form so a
+      // follow-up is judged by what it means.
+      let route: ChatRoute = "specific";
+      if (knowledge) {
+        const picked = await this.pickRoute(searchQuery, knowledge, client);
+        if (picked.route === "off_topic") {
+          return await this.offTopicResponse(
+            query,
+            searchQuery,
+            projectId,
+            knowledge,
+            picked.docs,
+            startTime,
+          );
+        }
+        if (picked.route === "overview") {
+          const overview = await this.answerOverview(
+            client,
+            own,
+            query,
+            searchQuery,
+            projectId,
+            knowledge,
+            picked.docs,
+            { conversation_history, max_context_length },
+            startTime,
+          );
+          if (overview) return overview;
+          route = "fallback";
+        } else {
+          route = picked.route;
+        }
+      }
+
+      // Step 3: Embed whichever queries we are searching with
       const queries = rewritten ? [query, searchQuery] : [query];
       const { embeddings, embeddingModel } = await this.generateQueryEmbeddings(
         client,
         queries,
       );
 
-      // Step 3: Search Qdrant once per query, fetching deeper than the k we
+      // Step 4: Search Qdrant once per query, fetching deeper than the k we
       // keep. Fusing two lists of 5 gives RRF almost nothing to agree on, and a
       // chunk ranked 6th by both phrasings could never surface. Qdrant
       // prefetches 100 for its own fusion; this costs one query either way.
@@ -156,7 +225,7 @@ export class RAGService {
         ),
       );
 
-      // Step 4: Fuse, drop duplicate passages, take the top k, then order by
+      // Step 5: Fuse, drop duplicate passages, take the top k, then order by
       // score. Fusion decides which chunks survive; score decides the order the
       // model and the UI see, which is what citation numbers depend on.
       const fused = dropDuplicateChunks(fuseByRRF(lists));
@@ -187,10 +256,11 @@ export class RAGService {
           projectId,
           embeddingModel,
           Date.now() - startTime,
+          route,
         );
       }
 
-      // Step 5: Build context and citations
+      // Step 6: Build context and citations
       const ragContext = use_short_context
         ? citationService.createShortContext(searchResults, max_context_length)
         : citationService.buildContext(searchResults);
@@ -199,7 +269,7 @@ export class RAGService {
         `📝 Context built: ${ragContext.formatted_context.length} characters`,
       );
 
-      // Step 6: Answer, saying so when the context is only a weak match
+      // Step 7: Answer, saying so when the context is only a weak match
       const top_similarity = topScore(searchResults);
       const low_confidence = isWeakMatch(searchResults);
 
@@ -251,6 +321,7 @@ export class RAGService {
           llm_model: llmResponse.model,
           processing_time_ms: Date.now() - startTime,
           context_length: ragContext.formatted_context.length,
+          route,
         },
       };
     } catch (error) {
@@ -279,6 +350,168 @@ export class RAGService {
         signal,
       });
       return result.answer;
+    };
+  }
+
+  private routeWith(client: RAGOpenAI): CompleteRoute {
+    return async (messages, signal) => {
+      const result = await client.generateChatCompletion({
+        model: ROUTER_MODEL,
+        messages,
+        max_tokens: ROUTER_MAX_TOKENS,
+        temperature: 0,
+        signal,
+      });
+      return result.answer;
+    };
+  }
+
+  /**
+   * "fallback" when the router or the document list failed. With no ready
+   * documents the router is skipped: search gives the usual "not enough
+   * information" answer.
+   */
+  private async pickRoute(
+    question: string,
+    knowledge: ProjectKnowledge,
+    client: RAGOpenAI,
+  ): Promise<{ route: ChatRoute; docs: SuggestionDoc[] }> {
+    let docs: SuggestionDoc[];
+    try {
+      docs = await knowledge.listDocuments();
+    } catch {
+      console.warn("🧭 Router skipped: documents could not be listed");
+      return { route: "fallback", docs: [] };
+    }
+    if (docs.length === 0) return { route: "specific", docs };
+
+    const { route, failed } = await routeQuestion(
+      question,
+      docs.map((doc) => doc.file_name),
+      this.routeWith(client),
+    );
+    return { route: failed ? "fallback" : route, docs };
+  }
+
+  /**
+   * One numbered source per document with a summary. Null when there is no
+   * summary to answer from, so the caller can search instead.
+   */
+  private async answerOverview(
+    client: RAGOpenAI,
+    own: boolean,
+    query: string,
+    searchQuery: string,
+    projectId: string,
+    knowledge: ProjectKnowledge,
+    docs: SuggestionDoc[],
+    options: { conversation_history?: string; max_context_length: number },
+    startTime: number,
+  ): Promise<RAGQueryResult | null> {
+    const ids = docs
+      .slice(0, SUGGESTION_MAX_DOCS)
+      .filter((doc) => doc.is_summary_exist)
+      .map((doc) => doc.id);
+    let summaries = new Map<string, string | null>();
+    if (ids.length > 0) {
+      try {
+        summaries = await knowledge.loadSummaries(ids);
+      } catch {
+        console.warn("📚 Overview fell back: summaries could not be read");
+        return null;
+      }
+    }
+
+    const overview = buildOverview(
+      docs.map((doc) => ({
+        id: doc.id,
+        file_name: doc.file_name,
+        summary: summaries.get(doc.id) ?? null,
+        updated_at: doc.updated_at,
+      })),
+      options.max_context_length,
+    );
+    if (overview.total_chunks === 0) {
+      console.warn("📚 Overview fell back: no document has a summary");
+      return null;
+    }
+
+    console.log(
+      `📚 Overview from ${overview.total_chunks} summaries, ${overview.listedOnly.length} listed by name, ${overview.formatted_context.length} characters`,
+    );
+
+    const llmResponse = await this.generateLLMResponse(
+      client,
+      own,
+      overview.formatted_context,
+      query,
+      {
+        conversationHistory: options.conversation_history,
+        sourceCount: overview.total_chunks,
+        overview: true,
+      },
+    );
+
+    return {
+      answer: keepValidCitationIds(llmResponse.answer, overview.total_chunks),
+      citations: overview.citations,
+      metadata: {
+        query,
+        search_query: searchQuery,
+        project_id: projectId,
+        chunks_retrieved: overview.total_chunks,
+        chunks_used: overview.total_chunks,
+        avg_similarity: 0,
+        top_similarity: 0,
+        low_confidence: false,
+        embedding_model: "none",
+        llm_model: llmResponse.model,
+        processing_time_ms: Date.now() - startTime,
+        context_length: overview.formatted_context.length,
+        route: "overview",
+      },
+    };
+  }
+
+  /** A fixed reply with example questions. No search and no answering call. */
+  private async offTopicResponse(
+    query: string,
+    searchQuery: string,
+    projectId: string,
+    knowledge: ProjectKnowledge,
+    docs: SuggestionDoc[],
+    startTime: number,
+  ): Promise<RAGQueryResult> {
+    let suggestions: string[];
+    try {
+      suggestions = await knowledge.suggestions(docs);
+    } catch {
+      suggestions = [];
+    }
+    if (suggestions.length === 0) suggestions = [...FALLBACK_SUGGESTIONS];
+    suggestions = suggestions.slice(0, OFF_TOPIC_CHIPS);
+
+    console.log(`🚫 Off-topic reply with ${suggestions.length} suggestions`);
+
+    return {
+      answer: OFF_TOPIC_ANSWER,
+      citations: [],
+      metadata: {
+        query,
+        search_query: searchQuery,
+        project_id: projectId,
+        chunks_retrieved: 0,
+        chunks_used: 0,
+        avg_similarity: 0,
+        top_similarity: 0,
+        low_confidence: false,
+        embedding_model: "none",
+        llm_model: "none",
+        processing_time_ms: Date.now() - startTime,
+        context_length: 0,
+        route: "off_topic",
+        suggestions,
+      },
     };
   }
 
@@ -380,6 +613,7 @@ export class RAGService {
     projectId: string,
     embeddingModel: string,
     processingTime: number,
+    route: ChatRoute,
   ): RAGQueryResult {
     return {
       answer:
@@ -398,6 +632,7 @@ export class RAGService {
         llm_model: "none",
         processing_time_ms: processingTime,
         context_length: 0,
+        route,
       },
     };
   }

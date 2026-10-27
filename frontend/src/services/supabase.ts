@@ -11,6 +11,7 @@ import { RETRIEVAL_DEFAULTS } from '../../../shared/constants/index';
 import type { Project, ProjectFile } from '../stores/project';
 import { fetchNewestMessages, fetchOlderMessages } from '../lib/chatHistory';
 import { signOutThisBrowser } from '../lib/signOut';
+import { sortCitations } from '../lib/chatRoute';
 import type { ListFilesResponse } from '../../../shared/types/index';
 import {
   AuthFormError,
@@ -478,8 +479,7 @@ const attachCitations = async (messages: ChatMessage[]): Promise<ChatMessage[]> 
     const { data: citationsData, error: citationsError } = await supabase
       .from('chat_citations')
       .select('*')
-      .in('message_id', assistantMessageIds)
-      .order('similarity_score', { ascending: false });
+      .in('message_id', assistantMessageIds);
 
     if (citationsError) {
       console.warn('Failed to get citations:', citationsError);
@@ -498,7 +498,10 @@ const attachCitations = async (messages: ChatMessage[]): Promise<ChatMessage[]> 
 
   return messages.map((message) => ({
     ...message,
-    citations: message.role === 'assistant' ? citationsByMessage[message.id] || [] : undefined,
+    citations:
+      message.role === 'assistant'
+        ? sortCitations(citationsByMessage[message.id] || [])
+        : undefined,
   }));
 };
 

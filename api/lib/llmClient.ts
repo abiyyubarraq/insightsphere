@@ -25,6 +25,8 @@ export interface AnswerOptions {
   lowConfidence?: boolean;
   /** How many chunks the context holds, so the prompt can name the valid ids. */
   sourceCount?: number;
+  /** The context holds one stored summary per document, not searched chunks. */
+  overview?: boolean;
 }
 
 export interface LLMClient {
@@ -52,7 +54,12 @@ export class OpenAILLMClient implements LLMClient {
     query: string,
     options: AnswerOptions = {},
   ): Promise<LLMResponse> {
-    const { conversationHistory, lowConfidence = false, sourceCount } = options;
+    const {
+      conversationHistory,
+      lowConfidence = false,
+      sourceCount,
+      overview = false,
+    } = options;
 
     try {
       console.log(`🤖 Calling OpenAI LLM: ${this.model}`);
@@ -82,6 +89,9 @@ export class OpenAILLMClient implements LLMClient {
           : "",
         conversationHistory
           ? "Consider the previous conversation when answering, but base your response on the provided document context."
+          : "",
+        overview
+          ? "The context holds one summary per document, not the full documents. Answer from these summaries. If the question needs detail the summaries do not have, say that the summaries do not cover it."
           : "",
         lowConfidence
           ? "The retrieved context is only a weak match for this question and may not cover it. If it does not answer the question, say so plainly rather than stretching what is there."

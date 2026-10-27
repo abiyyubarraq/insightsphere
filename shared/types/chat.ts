@@ -22,6 +22,12 @@ export interface ChatMessage {
     citations?: ChatCitation[]; // Populated when fetching assistant messages
 }
 
+/**
+ * How the API answered. `fallback` means the question router failed or its
+ * pick could not be used, and the normal search path answered instead.
+ */
+export type ChatRoute = "overview" | "specific" | "off_topic" | "fallback";
+
 export interface ChatMessageMetadata {
     // For user messages
     query_length?: number;
@@ -44,6 +50,10 @@ export interface ChatMessageMetadata {
     embedding_model?: string;
     context_length?: number;
     context_tokens?: number;
+    /** Absent on messages saved before the router existed. */
+    route?: ChatRoute;
+    /** Questions to offer instead, only on an off_topic reply. */
+    suggestions?: string[];
 }
 
 export interface ChatCitation {
@@ -81,6 +91,7 @@ export interface SendMessageResponse {
         chunks_retrieved: number;
         context_length: number;
         llm_model: string;
+        route: ChatRoute;
     };
 }
 

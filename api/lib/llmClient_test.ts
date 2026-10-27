@@ -47,3 +47,13 @@ Deno.test("with history the answer prompt says old source numbers do not apply",
   const withoutHistory = await userPrompt({ sourceCount: 3 });
   assert(!withoutHistory.includes("Earlier answers"));
 });
+
+// Summaries are cut at the start. Without this line the model fills the gaps
+// with detail that is not in the context.
+Deno.test("an overview answer is told the context is summaries", async () => {
+  const overview = await userPrompt({ sourceCount: 2, overview: true });
+  assert(overview.includes("one summary per document"));
+  assert(overview.includes("Cite only doc_id 1 to 2."));
+
+  assert(!(await userPrompt({ sourceCount: 2 })).includes("one summary per document"));
+});

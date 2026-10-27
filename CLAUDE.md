@@ -61,6 +61,8 @@ new code — import it.
 | Similarity threshold | **0.30** | same |
 | Sufficiency floor | 0.45 | same |
 | Context length cap | 4000 chars | same |
+| Question router | `gpt-4o-mini`, temp 0, 1.5 s timeout, 8 output tokens | `api/lib/questionRouter.ts` |
+| Client retrieval options | only `max_chunks` (1 to the default); chat also history on/off and 1-10 messages | `api/lib/queryOptions.ts` |
 | Max file size | 100 MB, enforced in the browser *and* in the API | same |
 | Max pages | 1000 | same |
 | Text layer floor | 20 runes and 10 letters per page, below which the page goes to OCR | `doc-parser/utils/text_layer.go` |
@@ -175,6 +177,14 @@ first turn                    follow-up turn
      |                                 temp 0, 1.5s, falls  |
      |                                 back to original)    |
      |                                        |             |
+     +--------------> router <----------------+             |
+           (gpt-4o-mini, temp 0, 1.5s, file names)          |
+                        |                                   |
+   off_topic: fixed reply + 3 suggestion chips, no search   |
+   overview:  summaries, one source per document -> answer  |
+   specific, or the router failed:                          |
+     +------------------------------------------+           |
+     |                                          |           |
   embed                                 embed both ---------+
      |                                        |
   search                             search twice, fuse by RRF
@@ -191,6 +201,18 @@ order it is given them, the model cites `[doc_id: N]`, and the frontend maps `N`
 back to the Nth citation by position. Both the chat route and the history reload
 sort citations by score, so the list handed to `buildContext` must be in score
 order too. `api/lib/retrieval.ts` does that after fusion, and a test pins it.
+
+The router (`api/lib/questionRouter.ts`) runs only when the project has ready
+documents, and every failure (timeout, error, a reply that is not one label)
+takes the search path with `route: "fallback"`. Overview questions score
+0.16-0.22 against chunks, under the threshold, which is why they skip search:
+`api/lib/overview.ts` builds the context from `project_files.summary`, one
+numbered source per document with a summary, within the context cap.
+Documents without one are named on an un-numbered line. Off-topic questions
+get a fixed sentence and chips from the suggestions cache, with no search and
+no answering call. Every answer stores its `route` in the message metadata.
+Overview citations all score 0, so the chat route and the history reload sort
+by `similarity_score desc, chunk_index asc`.
 
 Citation numbers are only valid inside their own answer, so three guards keep
 chip N and source N in agreement (`api/lib/citationMarkers.ts`):
@@ -237,7 +259,7 @@ sees another.
 **Do not put a number in the answer prompt that is not in the context.** The
 system prompt forbids arithmetic, and `buildContext` deliberately emits no
 similarity scores — if a number is not in the context, the model cannot restate
-it.
+it. Document summaries on the overview path are context too.
 
 **Stack:** Deno for the API, TypeScript everywhere, Svelte 5 runes, Go for the
 parser, DaisyUI for components. Not Node, not Python, not plain JavaScript, not

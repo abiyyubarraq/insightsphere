@@ -16,8 +16,10 @@ import {
 } from "../../lib/quotaService.ts";
 import { keyFailureResponse } from "../../lib/openaiErrors.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
+import { knowledgeFor, suggestionCache } from "../../lib/projectKnowledge.ts";
+import { pickQueryOptions } from "../../lib/queryOptions.ts";
+import type { ChatRoute } from "../../../shared/types/chat.ts";
 import {
-  createSuggestionCache,
   getSuggestions,
   SUGGESTION_MAX_TOKENS,
   SUGGESTION_MODEL,
@@ -26,7 +28,7 @@ import {
 
 interface QueryRequest {
   query: string;
-  options?: RAGQueryOptions;
+  options?: unknown;
 }
 
 interface QueryResponse {
@@ -50,6 +52,8 @@ interface QueryResponse {
     llm_model: string;
     processing_time_ms: number;
     context_length: number;
+    route: ChatRoute;
+    suggestions?: string[];
   };
 }
 
@@ -70,7 +74,7 @@ export async function queryProject(c: Context) {
 
     // Parse request body
     const body = await c.req.json() as QueryRequest;
-    const { query, options = {} } = body;
+    const { query, options } = body;
 
     if (!query?.trim()) {
       return c.json({
@@ -104,13 +108,12 @@ export async function queryProject(c: Context) {
 
     console.log(`👤 User: ${user.id} querying project: ${projectId}`);
 
-    // Set default options
     const queryOptions: RAGQueryOptions = {
       max_chunks: SEARCH_DEFAULTS.maxChunks,
       similarity_threshold: SEARCH_DEFAULTS.threshold,
       use_short_context: false,
       max_context_length: SEARCH_DEFAULTS.maxContextLength,
-      ...options,
+      ...pickQueryOptions(options),
     };
 
     console.log(`⚙️ Query options:`, {
@@ -126,6 +129,7 @@ export async function queryProject(c: Context) {
       query,
       openai,
       queryOptions,
+      knowledgeFor(projectId, openai.client),
     );
 
     const totalTime = Date.now() - startTime;
@@ -165,9 +169,6 @@ export async function queryProject(c: Context) {
     }, 500);
   }
 }
-
-/** One per API process; it starts empty after every deploy. */
-const suggestionCache = createSuggestionCache();
 
 /**
  * Example questions written from the project's ready documents
