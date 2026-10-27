@@ -123,7 +123,7 @@ A user with a saved key has every OpenAI call made for them (chat, query, docume
 Apply the schema: in the Supabase SQL editor run the files in `supabase/migrations/` in order. They create the ten tables, switch on row level security for all of them, and add the policies. `0006_quota.sql` also adds the default quota tiers.
 
 ```bash
-./dev/start.sh                   # qdrant + doc-parser + api
+bash dev/start.sh                   # qdrant + doc-parser + api
 cd frontend && npm install && npm run start
 ```
 
