@@ -208,8 +208,11 @@ takes the search path with `route: "fallback"`. Overview questions score
 0.16-0.22 against chunks, under the threshold, which is why they skip search:
 `api/lib/overview.ts` builds the context from `project_files.summary`, one
 numbered source per document with a summary, within the context cap.
-Documents without one are named on an un-numbered line. Off-topic questions
-get a fixed sentence and chips from the suggestions cache, with no search and
+Documents without one are named on an un-numbered line. `off_topic` is for
+questions with no link to research at all (weather, small talk, the assistant
+itself); general knowledge or methodology questions that documents could cover
+stay `specific`, and the router prompt says "when unsure, specific". Off-topic
+questions get a fixed sentence and chips from the suggestions cache, with no search and
 no answering call. Every answer stores its `route` in the message metadata.
 Overview citations all score 0, so the chat route and the history reload sort
 by `similarity_score desc, chunk_index asc`.

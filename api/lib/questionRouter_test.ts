@@ -51,10 +51,32 @@ Deno.test("the prompt carries the three labels and puts file names in a data blo
   for (const label of ["overview", "specific", "off_topic"]) {
     assert(system.content.includes(label), label);
   }
-  assert(system.content.includes("When unsure, answer specific."));
+  assert(system.content.includes("When unsure, specific."));
   assert(!system.content.includes("inoculation.pdf"));
   assert(user.content.includes("<files>\n- hallucination-survey.pdf\n- inoculation.pdf\n</files>"));
   assert(user.content.includes("what is the point of this?"));
+});
+
+// A router that calls an answerable question off_topic gives the user no answer
+// at all, so general knowledge and methodology questions must stay specific.
+Deno.test("the prompt keeps off_topic for questions with no link to research", () => {
+  const [system] = buildRouterMessages("q", files);
+  const offTopic = system.content.split("\n").find((line) => line.startsWith("off_topic:"));
+  const specific = system.content.split("\n").find((line) => line.startsWith("specific:"));
+
+  assert(offTopic !== undefined && specific !== undefined);
+  assert(offTopic.includes("clearly has nothing to do with research"));
+  assert(offTopic.includes("rarely"));
+  assert(!offTopic.includes("general knowledge"));
+  assert(specific.includes("general knowledge or methodology"));
+  assert(system.content.includes("use off_topic only when you are certain"));
+});
+
+// Examples in the instructions must stay generic, or a real file name could
+// slip in and bias the label.
+Deno.test("the prompt examples carry no file name from the request", () => {
+  const [system] = buildRouterMessages("q", files);
+  for (const name of files) assert(!system.content.includes(name), name);
 });
 
 Deno.test("a clean label is the route", async () => {
