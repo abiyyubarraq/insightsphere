@@ -129,6 +129,14 @@ Process, summary and `DELETE /v1/documents/:documentId` answer **404**
 document alike, so the answer never says the id exists. It comes before any
 claim, quota charge or OpenAI call. A real database error is still **500**.
 
+Both deletes remove the vectors first, then storage, then the row. When Qdrant
+fails, `DELETE /v1/documents/:documentId` answers **500** `"Could not delete
+the document. Try again."` and `DELETE /v1/projects/:projectId` answers
+**500** `"Could not delete the project's search index. Try again."`; the row
+and files are kept, so a retry is safe. A collection that does not exist is
+not an error (`purgeFromCollections` in `api/lib/vectorPurge.ts`). The order
+lives in `api/lib/documentDelete.ts` and `api/lib/projectDelete.ts`.
+
 Chat answers **404** `"Conversation not found."` for a `conversation_id` that
 is not the user's own in that project. Process and summary answer **404** when
 the body `project_id` is not the document's own project. Both come before the

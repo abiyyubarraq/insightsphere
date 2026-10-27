@@ -25,6 +25,7 @@ import {
   SUGGESTION_MODEL,
   SUGGESTION_TEMPERATURE,
 } from "../../lib/suggestions.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 interface QueryRequest {
   query: string;
@@ -156,10 +157,15 @@ export async function queryProject(c: Context) {
     return c.json(response);
   } catch (error) {
     if (error instanceof QuotaUnavailableError) {
-      console.error(error.message);
+      console.error("Quota check failed before query:", {
+        projectId: c.req.param("projectId"),
+      });
       return quotaUnavailable(c);
     }
-    console.error("RAG query endpoint failed:", error);
+    console.error("RAG query endpoint failed:", {
+      projectId: c.req.param("projectId"),
+      ...errorInfo(error),
+    });
     const keyFailure = keyFailureResponse(c, own, error);
     if (keyFailure) return keyFailure;
 
@@ -239,7 +245,10 @@ export async function getQuerySuggestions(c: Context) {
       generated_at: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Query suggestions failed:", error);
+    console.error("Query suggestions failed:", {
+      projectId: c.req.param("projectId"),
+      ...errorInfo(error),
+    });
 
     return c.json({
       success: false,

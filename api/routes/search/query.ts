@@ -5,6 +5,7 @@ import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 interface SearchRequest {
   query: string;
@@ -68,7 +69,7 @@ export async function searchDocuments(c: Context) {
       });
       queryEmbedding = embedding.embedding;
     } catch (error) {
-      console.error("Query embedding failed:", error);
+      console.error("Query embedding failed:", { project_id, ...errorInfo(error) });
       const keyFailure = keyFailureResponse(c, openai.own, error);
       if (keyFailure) return keyFailure;
       return c.json({
@@ -120,7 +121,7 @@ export async function searchDocuments(c: Context) {
       },
     });
   } catch (error) {
-    console.error("Search failed:", error);
+    console.error("Search failed:", errorInfo(error));
     return c.json({
       error: "Search failed",
     }, 500);

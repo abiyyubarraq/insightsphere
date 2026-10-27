@@ -10,6 +10,8 @@ import { currentUser } from "../../lib/auth.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { qdrantService } from "../../lib/qdrantClient.ts";
 import { projectIdShape } from "../../lib/documentAccess.ts";
+import { deleteProjectData, ProjectVectorDeleteError } from "../../lib/projectDelete.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 export async function deleteProject(c: Context) {
   const projectId = c.req.param("projectId");
@@ -31,16 +33,26 @@ export async function deleteProject(c: Context) {
     return c.json({ success: false, error: "Access denied to project" }, 403);
   }
 
-  await qdrantService.deleteProjectCollection(user.id, projectId);
-
-  const paths = await supabaseService.listStorageFiles(
-    `${user.id}/${projectId}`,
-  );
-  const storageObjects = await supabaseService.deleteStorageFiles(paths);
-
-  // Cascades to project_files -> document_pages / chat_citations, and to
-  // chat_conversations -> chat_messages.
-  await supabaseService.deleteProjectRow(projectId, user.id);
+  let storageObjects;
+  try {
+    storageObjects = await deleteProjectData({
+      deleteVectors: () => qdrantService.deleteProjectCollection(user.id, projectId),
+      deleteStorage: async () =>
+        await supabaseService.deleteStorageFiles(
+          await supabaseService.listStorageFiles(`${user.id}/${projectId}`),
+        ),
+      // Cascades to project_files -> document_pages / chat_citations, and to
+      // chat_conversations -> chat_messages.
+      deleteRow: () => supabaseService.deleteProjectRow(projectId, user.id),
+    });
+  } catch (error) {
+    if (!(error instanceof ProjectVectorDeleteError)) throw error;
+    console.error(
+      `Could not delete the collection of project ${projectId}:`,
+      errorInfo(error.cause),
+    );
+    return c.json({ success: false, error: error.message }, 500);
+  }
 
   console.log(
     `Deleted project ${projectId}: collection dropped, ${storageObjects} objects removed`,

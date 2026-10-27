@@ -352,57 +352,24 @@ export class QdrantService {
     }
   }
 
-  /** Drops the whole per-project collection. Used when a project is deleted. */
+  /**
+   * Drops the whole per-project collection. Used when a project is deleted. A
+   * collection that does not exist is a no-op; any Qdrant error throws.
+   */
   async deleteProjectCollection(
     userId: string,
     projectId: string,
   ): Promise<void> {
     const collectionName = this.getProjectCollectionName(userId, projectId);
-    try {
-      await this.client.deleteCollection(collectionName);
-      console.log(`Deleted collection: ${collectionName}`);
-    } catch (error) {
-      // Nothing was ever indexed for this project; that is a no-op, not a failure.
-      console.warn(`Could not delete collection ${collectionName}:`, error);
-    }
-  }
-
-  async listUserCollections(userId: string): Promise<string[]> {
-    try {
-      const collections = await this.client.getCollections();
-      const userCollections = collections.collections
-        .map((c) => c.name)
-        .filter((name) =>
-          name.startsWith(`${this.baseCollectionName}_user_${userId}`)
-        );
-
-      return userCollections;
-    } catch (error) {
-      console.error("Failed to list user collections:", error);
-      return [];
-    }
-  }
-
-  async deleteUserData(userId: string): Promise<void> {
-    try {
-      const userCollections = await this.listUserCollections(userId);
-
-      for (const collectionName of userCollections) {
-        try {
-          await this.client.deleteCollection(collectionName);
-          console.log(`Deleted collection: ${collectionName}`);
-        } catch (error) {
-          console.warn(`Could not delete collection ${collectionName}:`, error);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to delete user data:", error);
-      throw new Error(
-        `Failed to delete user data: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
-    }
+    await purgeFromCollections(
+      [collectionName],
+      async () =>
+        (await this.client.getCollections()).collections.map((c) => c.name),
+      async (name) => {
+        await this.client.deleteCollection(name);
+        console.log(`Deleted collection: ${name}`);
+      },
+    );
   }
 
   async getCollectionInfo(

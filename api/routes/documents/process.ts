@@ -34,6 +34,7 @@ import {
   createChunkId,
   type PageContent,
 } from "../../lib/chunkText.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 interface DocParserResponse {
   pages: Array<{
@@ -160,7 +161,7 @@ export async function processDocument(c: Context) {
     // "processing" with no route back. The client now polls the document's
     // status instead.
     runPipeline(document_id, project_id, user.id, document, openai).catch((error) => {
-      console.error(`Pipeline crashed for ${document_id}:`, error);
+      console.error(`Pipeline crashed for ${document_id}:`, errorInfo(error));
     });
 
     return c.json(
@@ -173,10 +174,10 @@ export async function processDocument(c: Context) {
     );
   } catch (error) {
     if (error instanceof QuotaUnavailableError) {
-      console.error(error.message);
+      console.error("Quota check failed before processing");
       return quotaUnavailable(c);
     }
-    console.error("Could not start processing:", error);
+    console.error("Could not start processing:", errorInfo(error));
     return c.json(
       {
         success: false,
@@ -192,7 +193,9 @@ async function releaseClaim(document: DocumentRecord): Promise<void> {
   await supabaseService.updateDocument(document.id, {
     status: document.status,
     processing_error: document.processing_error ?? null,
-  }).catch((e) => console.error("Could not release claim:", e));
+  }).catch((e) =>
+    console.error(`Could not release claim on ${document.id}:`, errorInfo(e))
+  );
 }
 
 /**
@@ -339,11 +342,9 @@ async function runPipeline(
       if (parseResult.imagesDir) {
         try {
           await Deno.remove(parseResult.imagesDir, { recursive: true });
-          console.log(`🧹 Cleaned up temp images: ${parseResult.imagesDir}`);
+          console.log(`🧹 Cleaned up temp images for ${document_id}`);
         } catch {
-          console.warn(
-            `⚠️ Failed to clean temp images directory: ${parseResult.imagesDir}`
-          );
+          console.warn(`⚠️ Failed to clean temp images for ${document_id}`);
         }
       }
     }
@@ -440,7 +441,10 @@ async function runPipeline(
             );
             console.log(`  🧠 Generated ${embeddings.length} embeddings`);
           } catch (openaiError) {
-            console.error("❌ OpenAI embeddings failed:", openaiError);
+            console.error(
+              `❌ OpenAI embeddings failed for ${document_id} page ${pageNumber}:`,
+              errorInfo(openaiError),
+            );
             throw embeddingFailedOnPage(pageNumber, openaiError);
           }
 
@@ -539,19 +543,24 @@ async function runPipeline(
       `Document ${document_id} ready in ${Date.now() - startTime}ms`,
     );
   } catch (error) {
-    console.error(`Processing failed for ${document_id}:`, error);
+    console.error(`Processing failed for ${document_id}:`, errorInfo(error));
 
     if (tempFilePath) {
       try {
         await supabaseService.cleanupTempFile(tempFilePath);
       } catch (cleanupError) {
-        console.warn("Failed to cleanup temp file:", cleanupError);
+        console.warn(
+          `Failed to cleanup temp file for ${document_id}:`,
+          errorInfo(cleanupError),
+        );
       }
     }
 
     await supabaseService.updateDocument(document_id, {
       status: "failed",
       processing_error: failureText(error, openai.own),
-    }).catch((e) => console.error("Could not record failure:", e));
+    }).catch((e) =>
+      console.error(`Could not record failure for ${document_id}:`, errorInfo(e))
+    );
   }
 }

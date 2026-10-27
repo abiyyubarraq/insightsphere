@@ -10,7 +10,8 @@ import type { Context } from "hono";
 import { currentUser } from "../../lib/auth.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { qdrantService } from "../../lib/qdrantClient.ts";
-import { deleteFilesAndRow } from "../../lib/documentDelete.ts";
+import { deleteDocumentData, DocumentVectorDeleteError } from "../../lib/documentDelete.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 export async function deleteDocument(c: Context) {
   const documentId = c.req.param("documentId");
@@ -24,31 +25,18 @@ export async function deleteDocument(c: Context) {
   try {
     document = await supabaseService.findDocument(documentId, user.id);
   } catch (error) {
-    console.error(`Could not read document ${documentId} for delete:`, error);
+    console.error(`Could not read document ${documentId} for delete:`, errorInfo(error));
     return c.json({ success: false, error: "Could not delete the document" }, 500);
   }
   if (!document) {
     return c.json({ success: false, error: "Document not found." }, 404);
   }
 
-  const removed = { vectors: false, storageObjects: 0 };
-
-  // Vectors first. If a later step fails the document still exists, and a retry
-  // is harmless; the reverse order could leave orphaned vectors with no row to
-  // find them by.
+  let storageObjects;
   try {
-    await qdrantService.deleteByDocumentId(
-      documentId,
-      user.id,
-      document.project_id,
-    );
-    removed.vectors = true;
-  } catch (error) {
-    console.error(`Failed to delete vectors for ${documentId}:`, error);
-  }
-
-  try {
-    removed.storageObjects = await deleteFilesAndRow(document.storage_path, {
+    storageObjects = await deleteDocumentData(document.storage_path, {
+      purgeVectors: () =>
+        qdrantService.deleteByDocumentId(documentId, user.id, document.project_id),
       listImages: () =>
         supabaseService.listStorageFiles(
           `${user.id}/${document.project_id}/images/${documentId}`,
@@ -58,9 +46,20 @@ export async function deleteDocument(c: Context) {
       deleteRow: () => supabaseService.deleteDocumentRow(documentId, user.id),
     });
   } catch (error) {
-    console.error(`Could not delete document ${documentId}:`, error);
+    if (error instanceof DocumentVectorDeleteError) {
+      console.error(
+        `Could not delete the vectors of document ${documentId}:`,
+        errorInfo(error.cause),
+      );
+      return c.json({ success: false, error: error.message }, 500);
+    }
+    console.error(`Could not delete document ${documentId}:`, errorInfo(error));
     return c.json({ success: false, error: "Could not delete the document" }, 500);
   }
+
+  // A failed vector delete returns above, so a success always means the
+  // vectors are gone.
+  const removed = { vectors: true, storageObjects };
 
   console.log(
     `Deleted document ${documentId}: vectors=${removed.vectors} objects=${removed.storageObjects}`,

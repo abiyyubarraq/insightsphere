@@ -23,6 +23,7 @@ import {
   pagesRefusal,
 } from "../../lib/summaryInput.ts";
 import { runSummary } from "../../lib/summaryRun.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 const SUMMARY_TIMEOUT_MS = 60_000;
 
@@ -166,12 +167,10 @@ export async function generateSummary(c: Context) {
     );
   } catch (error) {
     if (error instanceof QuotaUnavailableError) {
-      console.error(error.message);
+      console.error("Quota check failed before summary");
       return quotaUnavailable(c);
     }
-    console.error("Summary generation failed:", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    console.error("Summary generation failed:", errorInfo(error));
 
     const keyFailure = keyFailureResponse(c, openai?.own ?? false, error);
     if (keyFailure) return keyFailure;

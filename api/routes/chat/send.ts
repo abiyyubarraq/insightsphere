@@ -36,6 +36,7 @@ import type {
   SendMessageRequest,
   SendMessageResponse,
 } from "../../../shared/types/chat.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 export async function sendChatMessage(c: Context) {
   let own = false;
@@ -213,10 +214,15 @@ export async function sendChatMessage(c: Context) {
     return c.json(response);
   } catch (error) {
     if (error instanceof QuotaUnavailableError) {
-      console.error(error.message);
+      console.error("Quota check failed before chat:", {
+        projectId: c.req.param("projectId"),
+      });
       return quotaUnavailable(c);
     }
-    console.error("Chat message endpoint failed:", error);
+    console.error("Chat message endpoint failed:", {
+      projectId: c.req.param("projectId"),
+      ...errorInfo(error),
+    });
     const keyFailure = keyFailureResponse(c, own, error);
     if (keyFailure) return keyFailure;
 

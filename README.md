@@ -145,11 +145,11 @@ Every endpoint under `/v1` needs `Authorization: Bearer <supabase-jwt>`. There i
 |---|---|---|
 | `POST` | `/v1/documents/process` | Start OCR and indexing. Returns 202; poll `project_files.status` |
 | `POST` | `/v1/documents/generateSummary` | Whole-document summary for every supported format, written from the text processing stored (a long document is sampled); not charged to the daily quota when OpenAI fails to answer; charged once OpenAI has answered, even if the answer is empty |
-| `DELETE` | `/v1/documents/:documentId` | Removes vectors, page images, the file and the row |
+| `DELETE` | `/v1/documents/:documentId` | Removes vectors, page images, the file and the row, in that order. If the vectors cannot be removed, nothing else is deleted and the answer is 500, so a retry is safe |
 | `POST` | `/v1/projects/:projectId/chat` | Conversational RAG with citations |
 | `POST` | `/v1/projects/:projectId/query` | One-shot RAG, no history |
 | `GET` | `/v1/projects/:projectId/query/suggestions` | Up to 4 starter questions written from the ready documents' names and summaries, cached per project |
-| `DELETE` | `/v1/projects/:projectId` | Drops the collection and everything under it |
+| `DELETE` | `/v1/projects/:projectId` | Drops the collection and everything under it. A project with no collection yet is fine; if Qdrant fails, nothing else is deleted and the answer is 500, so a retry is safe |
 | `POST` | `/v1/search/query` | Raw chunk search, no generation |
 | `POST` | `/v1/searchFiles` | File library, by filename or semantic |
 | `GET` | `/v1/settings/api-key` | Whether the user saved their own OpenAI key, with a hint like `sk-…abcd` |
@@ -165,6 +165,7 @@ Status codes worth knowing:
 | 409 | Process: the document is already processing. Summary: the document already has one, unless the body has `regenerate: true` |
 | 429 | A daily quota is used up (chat and query share the chat quota; process counts documents; summary counts summaries), or more than 20 requests in a minute on a rate-limited route. `error` holds a sentence meant for the user |
 | 202 then `failed` | Process: the pages quota is charged in the background, after the 202. When it runs out, the document ends as `failed` and the sentence for the user is in `processing_error` on its `project_files` row. It is not a 429 |
+| 500 | Delete document or delete project when Qdrant cannot remove the vectors: "Could not delete the document. Try again." or "Could not delete the project's search index. Try again." The row and files are kept, so the same request can be sent again |
 | 503 | The settings routes when `KEY_ENCRYPTION_SECRET` is not set; or the quota or the sign-in could not be checked. A 503 does not mean signed out |
 
 The burst limit covers process, summary, chat, query, suggestions, `/v1/search/query`, a semantic `/v1/searchFiles`, and saving an own key.
