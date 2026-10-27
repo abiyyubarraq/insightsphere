@@ -4,29 +4,31 @@ import {
   DocumentProcessResponse,
 } from "../../../shared/types/index.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
-import type {
-  ChatCompletionRequest,
-  OpenAIClient,
-} from "../../lib/openaiClient.ts";
+import type { OpenAIClient } from "../../lib/openaiClient.ts";
 import { keyFailureResponse } from "../../lib/openaiErrors.ts";
 import type { ChosenClient } from "../../lib/openaiForUser.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
-import { MAX_FILE_BYTES } from "../../lib/constants.ts";
 import { currentUser } from "../../lib/auth.ts";
 import { documentInProject, projectIdShape } from "../../lib/documentAccess.ts";
 import {
-  chargeUserQuota,
+  chargeUserQuotaForWork,
   quotaExceeded,
   QuotaUnavailableError,
   quotaUnavailable,
 } from "../../lib/quotaService.ts";
+import {
+  buildSummaryInput,
+  buildSummaryRequest,
+  documentRefusal,
+  pagesRefusal,
+} from "../../lib/summaryInput.ts";
+
+const SUMMARY_TIMEOUT_MS = 60_000;
 
 export async function generateSummary(c: Context) {
   const startTime = Date.now();
-  let tempFilePath: string | null = null;
-  let uploadResponseId: string | null = null;
-  // Declared here so the catch below deletes the uploaded file with the same
-  // key that uploaded it.
+  // Declared here so the catch below knows whether the failing key was the
+  // user's own.
   let openai: ChosenClient<OpenAIClient> | null = null;
   try {
     const user = currentUser(c);
@@ -92,9 +94,9 @@ export async function generateSummary(c: Context) {
       );
     }
 
-    // Each call is a full read of the file by the model, the most expensive
-    // single request in the app, so an existing summary is not redone by
-    // accident.
+    // Each call sends up to SUMMARY_INPUT_MAX_CHARS of text, the most
+    // expensive single request in the app, so an existing summary is not
+    // redone by accident.
     if (document.is_summary_exist && !regenerate) {
       return c.json(
         {
@@ -105,137 +107,57 @@ export async function generateSummary(c: Context) {
       );
     }
 
+    const refusal = documentRefusal(document);
+    if (refusal) {
+      return c.json(
+        { success: false, error: refusal.error } as DocumentProcessResponse,
+        refusal.status,
+      );
+    }
+
+    // Read only after the ownership and project checks above.
+    const pageTexts = await supabaseService.getDocumentPageTexts(document_id);
+    const pageRefusal = pagesRefusal(pageTexts);
+    if (pageRefusal) {
+      return c.json(
+        { success: false, error: pageRefusal.error } as DocumentProcessResponse,
+        pageRefusal.status,
+      );
+    }
+
+    const input = buildSummaryInput(pageTexts);
+    console.log("Summarizing document:", {
+      document_id,
+      pageCount: pageTexts.length,
+      inputLength: input.text.length,
+      sampled: input.sampled,
+    });
+
     openai = await openAIForUser(user.id);
     const { client } = openai;
 
-    // Charged before the download, so a caller over the limit cannot make the
-    // API pull a large file again and again. The size check below then costs a
-    // credit, but only a caller who skipped the browser's own check reaches it.
-    const quota = await chargeUserQuota({
-      own: openai.own,
-      userId: user.id,
-      kind: "summaries",
-    });
-    if (!quota.allowed) return quotaExceeded(c, "summaries", quota.limit);
-
-    console.log(`Downloading file: ${document.storage_path}`);
-    const fileData = await supabaseService.downloadFile(document.storage_path);
-    console.log(
-      `File downloaded: ${fileData.fileName}, size: ${fileData.data.length} bytes`
+    const run = await chargeUserQuotaForWork(
+      { own: openai.own, userId: user.id, kind: "summaries" },
+      async () => {
+        const result = await client.generateChatCompletion(
+          buildSummaryRequest(input, AbortSignal.timeout(SUMMARY_TIMEOUT_MS)),
+        );
+        if (!result.answer.trim()) throw new Error("The model returned an empty summary");
+        await supabaseService.updateDocument(document_id, {
+          summary: result.answer,
+          is_summary_exist: true,
+        });
+        return result.answer.length;
+      },
     );
+    if (!run.allowed) return quotaExceeded(c, "summaries", run.limit);
 
-    if (fileData.data.length > MAX_FILE_BYTES) {
-      return c.json(
-        {
-          success: false,
-          error: `File is ${(fileData.data.length / 1024 / 1024).toFixed(1)}MB, ` +
-            `over the ${MAX_FILE_BYTES / 1024 / 1024}MB limit`,
-        } as DocumentProcessResponse,
-        413,
-      );
-    }
-
-    tempFilePath = await supabaseService.createTempFile(
-      fileData.data,
-      fileData.fileName || "temp_file"
-    );
-    console.log(`Temp file created: ${tempFilePath}`);
-
-    // Verify the file exists before uploading
-    try {
-      const fileInfo = await Deno.stat(tempFilePath);
-      console.log(
-        `File verified: ${tempFilePath}, size: ${fileInfo.size} bytes`
-      );
-    } catch (statError) {
-      throw new Error(
-        `Temp file verification failed: ${
-          statError instanceof Error ? statError.message : "Unknown error"
-        }`
-      );
-    }
-
-    console.log(`Uploading file to OpenAI: ${tempFilePath}`);
-    uploadResponseId = await client.uploadFile(tempFilePath);
-    console.log(`File uploaded to OpenAI with ID: ${uploadResponseId}`);
-    const request: ChatCompletionRequest = {
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are InsightSphere, an intelligent document analysis and summarization assistant.
-
-## Core Instructions:
-1. **Read and analyze** the uploaded file thoroughly and comprehensively
-2. **Generate a structured summary** that captures the document's essence, key insights, and main takeaways
-3. **Preserve technical accuracy** and maintain important terminology from the original document
-4. **Base your analysis solely** on the uploaded file content - do not add external knowledge
-5. **Format your response** in clean, readable Markdown with proper structure
-
-## Required Output Structure:
-### 📄 Document Overview
-- **Title:** [Extract or infer the document title]
-- **Type:** [Identify document type: report, research paper, manual, etc.]
-- **Purpose:** [Brief description of the document's main purpose]
-
-### 📋 Executive Summary
-[2-3 paragraph comprehensive summary covering the main content and findings]
-
-### 🔑 Key Points
-- [Bullet point 1: Main finding or argument]
-- [Bullet point 2: Important insight or conclusion]
-- [Bullet point 3: Critical information or recommendation]
-- [Continue as needed for all major points]
-
-### 📊 Important Details
-[Include specific data, statistics, dates, names, or technical details that are crucial]
-
-### 🎯 Key Takeaways
-[3-5 bullet points highlighting the most important insights for someone who needs to understand this document quickly]
-
-### 💡 Notable Terms & Concepts
-[Important keywords, technical terms, or concepts that someone should know when working with this document]
-
-**Note:** Ensure your summary is comprehensive yet concise, maintaining the document's original meaning while making it accessible to readers who need to quickly understand the content.`,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Please provide a comprehensive analysis and summary of the uploaded document. Focus on extracting the most important information, key insights, and actionable takeaways while maintaining accuracy to the original content.",
-            },
-            {
-              type: "file",
-              file: { file_id: uploadResponseId },
-            },
-          ],
-        },
-      ],
-      max_tokens: 3000,
-      temperature: 0.1,
-      top_p: 0.95,
-    };
-    const result = await client.generateChatCompletion(request);
-    await supabaseService.updateDocument(document_id, {
-      summary: result.answer,
-      is_summary_exist: true,
-    });
-    if (uploadResponseId) {
-      await client.deleteFile(uploadResponseId);
-      uploadResponseId = null;
-    }
-    if (tempFilePath) {
-      await supabaseService.cleanupTempFile(tempFilePath);
-      tempFilePath = null;
-    }
-
-    const processingTime = Date.now() - startTime;
+    console.log("Summary saved:", { document_id, summaryLength: run.value });
     return c.json(
       {
         success: true,
         document_id: document_id,
-        processing_time_ms: processingTime,
+        processing_time_ms: Date.now() - startTime,
       },
       200
     );
@@ -244,25 +166,9 @@ export async function generateSummary(c: Context) {
       console.error(error.message);
       return quotaUnavailable(c);
     }
-    console.error("Document processing failed:", error);
-
-    // Clean up temporary file if it exists
-    if (tempFilePath) {
-      try {
-        await supabaseService.cleanupTempFile(tempFilePath);
-        tempFilePath = null;
-      } catch (cleanupError) {
-        console.warn("Failed to cleanup temp file:", cleanupError);
-      }
-    }
-    if (uploadResponseId && openai) {
-      try {
-        await openai.client.deleteFile(uploadResponseId);
-        uploadResponseId = null;
-      } catch (deleteError) {
-        console.warn("Failed to delete file:", deleteError);
-      }
-    }
+    console.error("Summary generation failed:", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
 
     const keyFailure = keyFailureResponse(c, openai?.own ?? false, error);
     if (keyFailure) return keyFailure;

@@ -29,9 +29,8 @@ export interface ChatCompletionRequest {
     content:
       | string
       | Array<{
-          type: "text" | "file";
+          type: "text";
           text?: string;
-          file?: { file_id: string };
         }>;
   }>;
   model?: string;
@@ -179,7 +178,6 @@ export class OpenAIClient {
             : msg.content.map((item) => ({
                 type: item.type,
                 ...(item.text && { text: item.text }),
-                ...(item.file && { file: item.file }),
               })),
       }));
 
@@ -221,51 +219,6 @@ export class OpenAIClient {
         "Failed to generate chat completion",
         error,
       );
-    }
-  }
-
-  async deleteFile(fileId: string): Promise<void> {
-    try {
-      await this.client.files.del(fileId);
-    } catch (error) {
-      fail("File deletion failed:", "Failed to delete file", error);
-    }
-  }
-
-  async uploadFile(filePath: string): Promise<string> {
-    try {
-      // Read the file using Deno's file API
-      const fileData = await Deno.readFile(filePath);
-      const fileName = filePath.split("/").pop() || "document";
-
-      // Create a File object from the data
-      const file = new File([fileData], fileName, {
-        type: this.getFileType(fileName),
-      });
-
-      const response = await this.client.files.create({
-        file: file,
-        purpose: "assistants",
-      });
-      return response.id;
-    } catch (error) {
-      fail("File upload failed:", "Failed to upload file to OpenAI", error);
-    }
-  }
-
-  private getFileType(fileName: string): string {
-    const extension = fileName.split(".").pop()?.toLowerCase();
-    switch (extension) {
-      case "pdf":
-        return "application/pdf";
-      case "docx":
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      case "doc":
-        return "application/msword";
-      case "txt":
-        return "text/plain";
-      default:
-        return "application/octet-stream";
     }
   }
 }

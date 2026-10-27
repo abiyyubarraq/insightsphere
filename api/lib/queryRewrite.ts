@@ -155,10 +155,13 @@ export async function contextualiseQuery(
     const searchQuery = acceptRewrite(query, raw);
     return { searchQuery, rewritten: searchQuery !== query };
   } catch (error) {
+    // Status and code only: an OpenAI error message can repeat part of the key.
+    const { status, code } = (typeof error === "object" && error !== null
+      ? error
+      : {}) as { status?: unknown; code?: unknown };
     console.warn(
-      `Query rewrite failed, searching with the original question: ${
-        error instanceof Error ? error.message : "unknown error"
-      }`,
+      "Query rewrite failed, searching with the original question:",
+      { status, code },
     );
     return { searchQuery: query, rewritten: false };
   } finally {

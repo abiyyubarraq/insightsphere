@@ -12,7 +12,7 @@
  * the basic tier, because real users are on it.
  */
 
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { createClient } from "@supabase/supabase-js";
 import type { QuotaRow } from "./quota.ts";
 
@@ -161,6 +161,22 @@ Deno.test({
         const result = await consume(a, "summaries");
         assertEquals(result.tier, "basic");
         assertEquals(result.allowed, false);
+      });
+
+      // Failed summaries were charged and never given back, so two failures
+      // used up the day.
+      await t.step("a failed summary leaves the counter as it was", async () => {
+        // Imported here: quotaService builds a client at import time, which
+        // needs the env this test only has when it is enabled.
+        const { chargeUserQuotaForWork } = await import("./quotaService.ts");
+        const before = await counter(b, "summaries");
+        await assertRejects(() =>
+          chargeUserQuotaForWork(
+            { own: false, userId: b, kind: "summaries" },
+            () => Promise.reject(new Error("forced failure")),
+          )
+        );
+        assertEquals(await counter(b, "summaries"), before);
       });
     } finally {
       await db().from("quota_tiers").delete().eq("tier", TEST_TIER);

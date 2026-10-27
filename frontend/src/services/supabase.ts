@@ -74,7 +74,6 @@ export const sendChatMessage = async (
     // defaults were never once used by the path that matters.
     options: options || {
       max_chunks: RETRIEVAL_DEFAULTS.maxChunks,
-      similarity_threshold: RETRIEVAL_DEFAULTS.threshold,
       use_conversation_history: true,
       max_history_messages: 10,
     },

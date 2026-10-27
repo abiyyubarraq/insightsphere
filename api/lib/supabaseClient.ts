@@ -431,6 +431,22 @@ export class SupabaseService {
   }
 
   /**
+   * The text processing stored for each page, in page order. The service role
+   * skips RLS, so call this only after the document's ownership and project
+   * checks have passed.
+   */
+  async getDocumentPageTexts(documentId: string): Promise<string[]> {
+    const { data, error } = await this.client
+      .from("document_pages")
+      .select("ocr_text")
+      .eq("document_id", documentId)
+      .order("page_number", { ascending: true });
+
+    if (error) throw new Error(`Failed to read document pages: ${error.message}`);
+    return (data ?? []).map((row: { ocr_text: string }) => row.ocr_text);
+  }
+
+  /**
    * Get a public/signed URL for a file in Supabase Storage
    */
   async getPublicUrl(storagePath: string): Promise<string> {

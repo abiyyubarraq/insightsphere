@@ -7,6 +7,7 @@ import { OpenAIRequestError } from "./openaiErrors.ts";
 import type { SearchResult } from "./qdrantClient.ts";
 import { REWRITE_MAX_TOKENS } from "./queryRewrite.ts";
 import {
+  FALLBACK_ANSWER,
   OFF_TOPIC_ANSWER,
   type ProjectKnowledge,
   type RAGOpenAI,
@@ -153,6 +154,23 @@ Deno.test("a server key failure at the answer step still gives the apology", asy
 
   assertEquals(result.metadata.llm_model, "fallback-with-context");
   assert(result.answer.includes("technical difficulties"));
+});
+
+// The apology copied the question and 200 characters of document text into
+// the saved assistant message.
+Deno.test("the apology is a fixed sentence with no question or document text", async () => {
+  const { search } = fakeSearch();
+  const service = new RAGService(search);
+  const question = "What does the zebra-unique-question say?";
+
+  const result = await service.queryProject("project-1", "user-1", question, {
+    client: failingAnswerClient(500),
+    own: false,
+  });
+
+  assertEquals(result.answer, FALLBACK_ANSWER);
+  assert(!result.answer.includes(question));
+  assert(!result.answer.includes("passage for"));
 });
 
 /** Answers with a fixed text, so a test can control what the model cited. */
