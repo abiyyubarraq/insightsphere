@@ -64,6 +64,7 @@ new code — import it.
 | Question router | `gpt-4o-mini`, temp 0, 1.5 s timeout, 8 output tokens | `api/lib/questionRouter.ts` |
 | Client retrieval options | only `max_chunks` (1 to the default); chat also history on/off and 1-10 messages | `api/lib/queryOptions.ts` |
 | Summary input | 48 000 chars (~12k tokens) of stored page text; longer text is sampled: the first quarter of the cap, then 8 evenly spaced windows to the end | `api/lib/constants.ts`, `api/lib/summaryInput.ts` |
+| Summary cost | at most ~12k tokens in ($0.15/1M) plus `max_tokens` 3000 out ($0.60/1M), about $0.004 per summary, about $0.01 for the 2 a day on `basic`; the "2 x ~$0.075" in the `0006_quota.sql` comment is from before the input cap and is historical | `api/lib/constants.ts`, `api/lib/summaryInput.ts` |
 | Max file size | 100 MB, enforced in the browser *and* in the API | same |
 | Max pages | 1000 | same |
 | Text layer floor | 20 runes and 10 letters per page, below which the page goes to OCR | `doc-parser/utils/text_layer.go` |

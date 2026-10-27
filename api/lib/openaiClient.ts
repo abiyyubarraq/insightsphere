@@ -1,7 +1,7 @@
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import OpenAI from "openai";
 import { normalizeForEmbedding } from "./chunkText.ts";
-import { OpenAIRequestError } from "./openaiErrors.ts";
+import { OpenAIEmptyReplyError, OpenAIRequestError } from "./openaiErrors.ts";
 
 // Logs only status and code. The SDK error itself can print part of the key.
 function fail(label: string, action: string, error: unknown): never {
@@ -199,7 +199,7 @@ export class OpenAIClient {
       }, request.signal ? { signal: request.signal } : undefined);
 
       if (!response.choices || response.choices.length === 0) {
-        throw new Error("No completion choices returned from OpenAI");
+        throw new OpenAIEmptyReplyError();
       }
 
       const answer = response.choices[0]?.message?.content || "";
@@ -214,6 +214,7 @@ export class OpenAIClient {
         model: request.model || "gpt-4o-mini",
       };
     } catch (error) {
+      if (error instanceof OpenAIEmptyReplyError) throw error;
       fail(
         "OpenAI chat completion generation failed:",
         "Failed to generate chat completion",

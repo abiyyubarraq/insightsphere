@@ -5,6 +5,7 @@ import {
 } from "@supabase/supabase-js";
 import type { SuggestionDoc } from "./suggestions.ts";
 import { documentFromLookup } from "./documentAccess.ts";
+import { type PageStore, type ParsedPage, readAllPages } from "./pageStore.ts";
 
 /**
  * Supabase Auth could not be reached or failed on its side, so nothing is known
@@ -46,7 +47,7 @@ export interface DocumentPageRecord {
   updated_at: string;
 }
 
-export class SupabaseService {
+export class SupabaseService implements PageStore {
   private client: SupabaseClient;
   private bucketName: string;
 
@@ -436,14 +437,18 @@ export class SupabaseService {
    * checks have passed.
    */
   async getDocumentPageTexts(documentId: string): Promise<string[]> {
-    const { data, error } = await this.client
-      .from("document_pages")
-      .select("ocr_text")
-      .eq("document_id", documentId)
-      .order("page_number", { ascending: true });
+    const rows = await readAllPages(async (from, to) => {
+      const { data, error } = await this.client
+        .from("document_pages")
+        .select("ocr_text")
+        .eq("document_id", documentId)
+        .order("page_number", { ascending: true })
+        .range(from, to);
 
-    if (error) throw new Error(`Failed to read document pages: ${error.message}`);
-    return (data ?? []).map((row: { ocr_text: string }) => row.ocr_text);
+      if (error) throw new Error(`Failed to read document pages: ${error.message}`);
+      return (data ?? []) as Array<{ ocr_text: string }>;
+    });
+    return rows.map((row) => row.ocr_text);
   }
 
   /**
@@ -480,41 +485,46 @@ export class SupabaseService {
    */
   async storeDocumentPages(
     documentId: string,
-    pages: Array<{ page_number: number; text: string }>,
+    pages: ParsedPage[],
     imagePaths?: Record<number, string>
   ): Promise<void> {
-    try {
-      const pageRecords = pages.map((page) => ({
-        document_id: documentId,
-        page_number: page.page_number,
-        ocr_text: page.text,
-        char_count: page.text.length,
-        extraction_method: "ocr" as const,
-        image_storage_path: imagePaths?.[page.page_number] || null,
-      }));
+    const pageRecords = pages.map((page) => ({
+      document_id: documentId,
+      page_number: page.page_number,
+      ocr_text: page.text,
+      char_count: page.text.length,
+      extraction_method: "ocr" as const,
+      image_storage_path: imagePaths?.[page.page_number] || null,
+    }));
 
-      const { error } = await this.client
-        .from("document_pages")
-        .upsert(pageRecords, {
-          onConflict: "document_id,page_number",
-          ignoreDuplicates: false, // Update existing
-        });
+    const { error } = await this.client
+      .from("document_pages")
+      .upsert(pageRecords, {
+        onConflict: "document_id,page_number",
+        ignoreDuplicates: false, // Update existing
+      });
 
-      if (error) {
-        throw new Error(`Failed to store document pages: ${error.message}`);
-      }
-
-      console.log(
-        `✅ Stored ${pageRecords.length} pages for document ${documentId}`
-      );
-    } catch (error) {
-      console.error("Document pages storage failed:", error);
-      throw new Error(
-        `Failed to store document pages: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    if (error) {
+      throw new Error(`Failed to store document pages: ${error.message}`);
     }
+
+    console.log(
+      `✅ Stored ${pageRecords.length} pages for document ${documentId}`
+    );
+  }
+
+  /**
+   * The service role skips RLS: call this only from processing, after the
+   * ownership check, and always filtered by document_id.
+   */
+  async deleteDocumentPagesAbove(documentId: string, lastPage: number): Promise<void> {
+    const { error } = await this.client
+      .from("document_pages")
+      .delete()
+      .eq("document_id", documentId)
+      .gt("page_number", lastPage);
+
+    if (error) throw new Error(`Failed to remove old document pages: ${error.message}`);
   }
 
   /**

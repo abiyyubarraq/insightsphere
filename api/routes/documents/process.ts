@@ -13,6 +13,7 @@ import type { ChosenClient } from "../../lib/openaiForUser.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
+import { persistDocumentPages } from "../../lib/pageStore.ts";
 import { currentUser } from "../../lib/auth.ts";
 import { documentInProject, projectIdShape } from "../../lib/documentAccess.ts";
 import {
@@ -347,24 +348,17 @@ async function runPipeline(
       }
     }
 
-    try {
-      console.log(
-        `💾 Persisting ${parseResult.pages.length} pages to database...`
-      );
-      await supabaseService.storeDocumentPages(
-        document_id,
-        parseResult.pages,
-        imagePaths
-      );
-      console.log(
-        `✅ Stored ${parseResult.pages.length} pages in document_pages table`
-      );
-    } catch (pageStoreError) {
-      console.error("⚠️ Failed to store document pages:", pageStoreError);
-      console.warn(
-        "⚠️ Continuing with processing despite page storage failure"
-      );
-    }
+    // Before the Qdrant purge, so a failure here fails the document with its
+    // old vectors untouched. Summaries read these rows.
+    console.log(
+      `💾 Persisting ${parseResult.pages.length} pages to database...`
+    );
+    await persistDocumentPages(
+      supabaseService,
+      document_id,
+      parseResult.pages,
+      imagePaths
+    );
 
     const parseMetadata = {
       pageCount: parseResult.pages?.length || 0,

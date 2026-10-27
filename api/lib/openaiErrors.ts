@@ -32,6 +32,18 @@ export class OpenAIRequestError extends Error {
 }
 
 /**
+ * OpenAI answered, but with no choices. The call is paid for, so a quota charge
+ * must stay. It is still an OpenAIRequestError, with the same message as
+ * before, so callers that only check for that type behave as they did.
+ */
+export class OpenAIEmptyReplyError extends OpenAIRequestError {
+  constructor() {
+    super("Failed to generate chat completion", new Error("No completion choices returned from OpenAI"));
+    this.name = "OpenAIEmptyReplyError";
+  }
+}
+
+/**
  * Names the page in processing_error. Built on the original error, so status
  * and code still reach userKeyFailure, and the text is masked again.
  */
