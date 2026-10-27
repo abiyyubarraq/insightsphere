@@ -142,30 +142,6 @@ export class CitationService {
 	}
 
 	/**
-	 * Format citations for display in frontend
-	 */
-	formatForDisplay(citations: Citation[]): Array<{
-		id: string;
-		source: string;
-		snippet: string;
-		score: string;
-		location: string;
-	}> {
-		return citations.map((citation, index) => {
-			const pageInfo = citation.page_number ? ` • Page ${citation.page_number}` : "";
-			const location = `${citation.file_name}${pageInfo} • Chunk ${citation.chunk_index}`;
-			
-			return {
-				id: `citation-${index}`,
-				source: citation.file_name,
-				snippet: citation.text_snippet,
-				score: `${(citation.similarity_score * 100).toFixed(1)}%`,
-				location
-			};
-		});
-	}
-
-	/**
 	 * Create a shortened context for token-limited models
 	 */
 	createShortContext(searchResults: SearchResult[], maxLength = 3000): RAGContext {

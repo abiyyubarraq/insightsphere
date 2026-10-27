@@ -169,10 +169,18 @@ POST /v1/documents/process  -> 202 immediately, client polls status
         |
    embed in batches of 20, text-embedding-3-small
         |
-   delete existing points for the document, then upsert
+   delete existing points for the document, then upsert;
+   a failed purge fails the document before any upsert
         |
    status: ready, or failed with processing_error set
 ```
+
+A collection that does not exist yet is not a purge failure: the delete runs
+only on collections in the Qdrant collection list (`api/lib/vectorPurge.ts`).
+A page image that fails to upload does not fail the document. Its page number
+goes in `project_files.metadata.missing_page_images`, and a fully successful
+reprocess removes the key (`api/lib/pageImages.ts`). Images only feed the file
+library preview, never answers or citations.
 
 Chunk IDs are a UUID v5 over `documentId_page_chunkIndex`. Qdrant upserts by
 point ID, so reprocessing replaces rather than appends. This is load-bearing:
