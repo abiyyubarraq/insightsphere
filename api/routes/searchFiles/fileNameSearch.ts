@@ -6,6 +6,7 @@ import { supabaseService } from "../../lib/supabaseClient.ts";
 import { buildBaseQuery, formatFileData } from "./helpers.ts";
 import { getFileCount } from "./helpers.ts";
 import { FileQueryResult, ListFilesRequest } from "./search.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 /**
  * Handle filename search mode
@@ -41,7 +42,7 @@ export async function handleFilenameSearch(
     .range(offset, offset + limit - 1);
 
   if (error) {
-    console.error("Error fetching files:", error);
+    console.error("Error fetching files:", errorInfo(error));
     throw new Error("Failed to fetch files");
   }
 

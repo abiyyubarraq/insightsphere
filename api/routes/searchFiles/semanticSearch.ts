@@ -9,6 +9,7 @@ import { OpenAIRequestError } from "../../lib/openaiErrors.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { formatFileData } from "./helpers.ts";
 import { SEARCH_DEFAULTS } from "../../lib/constants.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 /**
  * Handle semantic search mode
@@ -39,7 +40,7 @@ export async function handleSemanticSearch(
       .select("id")
       .eq("user_id", userId);
     if (error) {
-      console.error("Error fetching projects:", error);
+      console.error("Error fetching projects:", errorInfo(error));
       throw new Error("Failed to fetch projects");
     }
     projectIds = data?.map((project) => project.id) || [];

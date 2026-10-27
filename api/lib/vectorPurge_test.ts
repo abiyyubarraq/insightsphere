@@ -112,3 +112,33 @@ Deno.test("a missing collection lets the write run", async () => {
   );
   assertEquals(writes, 1);
 });
+
+// Project delete caught every Qdrant error as "nothing was indexed", so an
+// outage deleted the project and left its collection behind.
+Deno.test("project collection: present is deleted once, missing is a no-op", async () => {
+  const present = collections([USER, PROJECT]);
+  await purgeFromCollections([PROJECT], present.existing, present.remove);
+  assertEquals(present.deleted, [PROJECT]);
+
+  const missing = collections([USER]);
+  await purgeFromCollections([PROJECT], missing.existing, missing.remove);
+  assertEquals(missing.deleted, []);
+});
+
+// Same bug: a failed list or delete must reach the route as an error.
+Deno.test("project collection: a failed list or delete throws", async () => {
+  const listFails = collections([PROJECT], true);
+  await assertRejects(
+    () => purgeFromCollections([PROJECT], listFails.existing, listFails.remove),
+    Error,
+    "Service Unavailable",
+  );
+  assertEquals(listFails.deleted, []);
+
+  const deleteFails = collections([PROJECT], false, PROJECT);
+  await assertRejects(
+    () => purgeFromCollections([PROJECT], deleteFails.existing, deleteFails.remove),
+    Error,
+    "Service Unavailable",
+  );
+});

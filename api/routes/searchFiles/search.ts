@@ -10,6 +10,7 @@ import { handleSemanticSearch } from "./semanticSearch.ts";
 import { handleFilenameSearch } from "./fileNameSearch.ts";
 import { keyFailureResponse } from "../../lib/openaiErrors.ts";
 import { openAIForUser } from "../../lib/userOpenAI.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 export interface ListFilesRequest {
   limit?: number;
@@ -83,7 +84,7 @@ export async function searchFiles(c: Context) {
 
     return c.json(result);
   } catch (error) {
-    console.error("File listing failed:", error);
+    console.error("File listing failed:", errorInfo(error));
     const keyFailure = keyFailureResponse(c, own, error);
     if (keyFailure) return keyFailure;
 

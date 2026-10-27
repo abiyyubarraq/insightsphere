@@ -1,5 +1,11 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { type DocumentDeleteSteps, deleteFilesAndRow } from "./documentDelete.ts";
+import { assertEquals, assertInstanceOf, assertRejects } from "@std/assert";
+import {
+  deleteDocumentData,
+  deleteFilesAndRow,
+  DOCUMENT_VECTOR_DELETE_FAILED,
+  DocumentVectorDeleteError,
+  type DocumentDeleteSteps,
+} from "./documentDelete.ts";
 
 const STORAGE_PATH = "user/project/123_file.pdf";
 const IMAGES = ["user/project/images/doc/page-1.png", "user/project/images/doc/page-2.png"];
@@ -93,4 +99,45 @@ Deno.test("deleting the row throws: the error reaches the route", async () => {
     "Failed to delete document",
   );
   assertEquals(calls.deletedPaths, [[STORAGE_PATH, ...IMAGES]]);
+});
+
+// A failed vector purge was logged and the row deleted anyway, so the vectors
+// stayed searchable in chat with no row left to retry the delete from.
+Deno.test("a failed purge keeps the files and the row", async () => {
+  const calls = freshCalls();
+  const error = await assertRejects(
+    () =>
+      deleteDocumentData(STORAGE_PATH, {
+        ...steps(calls),
+        purgeVectors: () => Promise.reject(new Error("Service Unavailable")),
+      }),
+    DocumentVectorDeleteError,
+  );
+  assertEquals(error.message, DOCUMENT_VECTOR_DELETE_FAILED);
+  assertEquals(DOCUMENT_VECTOR_DELETE_FAILED, "Could not delete the document. Try again.");
+  assertInstanceOf(error.cause, Error);
+  assertEquals(calls.deletedPaths, []);
+  assertEquals(calls.rowDeleted, false);
+});
+
+// Removing the row before the vectors could leave vectors that no row points to.
+Deno.test("a successful delete removes vectors, then files, then the row", async () => {
+  const order: string[] = [];
+  const removed = await deleteDocumentData(STORAGE_PATH, {
+    purgeVectors: () => {
+      order.push("vectors");
+      return Promise.resolve();
+    },
+    listImages: () => Promise.resolve(IMAGES),
+    deleteFiles: (paths) => {
+      order.push("files");
+      return Promise.resolve(paths.length);
+    },
+    deleteRow: () => {
+      order.push("row");
+      return Promise.resolve();
+    },
+  });
+  assertEquals(order, ["vectors", "files", "row"]);
+  assertEquals(removed, 3);
 });

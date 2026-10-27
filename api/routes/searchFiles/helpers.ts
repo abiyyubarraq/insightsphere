@@ -1,6 +1,7 @@
 import { FileLibraryItem } from "../../../shared/types/index.ts";
 import { supabaseService } from "../../lib/supabaseClient.ts";
 import { escapeLike } from "../../lib/likePattern.ts";
+import { errorInfo } from "../../lib/logSafe.ts";
 
 /**
  * Format file data from Supabase response
@@ -24,10 +25,7 @@ export async function formatFileData(
     try {
       firstImageUrl = await supabaseService.getPublicUrl(imagePaths[1]);
     } catch (error) {
-      console.warn(
-        `Failed to get image URL for file ${file.id}:`,
-        error instanceof Error ? error.message : error
-      );
+      console.warn(`Failed to get image URL for file ${file.id}:`, errorInfo(error));
       firstImageUrl = null;
     }
   }
@@ -97,7 +95,7 @@ export async function getFileCount(
   const { count, error: countError } = await countQuery;
 
   if (countError) {
-    console.error("Error counting files:", countError);
+    console.error("Error counting files:", errorInfo(countError));
     throw new Error("Failed to count files");
   }
 
