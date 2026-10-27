@@ -83,10 +83,10 @@ export function refundQuota(
   });
 }
 
-/** chargeUserQuota for one unit, refunded if `work` throws. */
+/** chargeUserQuota for one unit, refunded if `work` throws before it calls `billed`. */
 export function chargeUserQuotaForWork<T>(
   charge: Omit<QuotaCharge, "amount">,
-  work: () => Promise<T>,
+  work: (billed: () => void) => Promise<T>,
 ) {
   return chargeThenRun(
     { consume: consumeQuota, refund: refundQuota, today: utcDay },

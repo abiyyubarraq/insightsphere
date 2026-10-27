@@ -48,14 +48,20 @@ export type ChargedRun<T> =
   | { allowed: true; value: T };
 
 /**
- * Charges one unit, runs `work`, and refunds that unit once if `work` throws.
- * The error is thrown on either way. Nothing is refunded when nothing was
- * charged: an own key, or a refused charge.
+ * Charges one unit, runs `work`, and refunds that unit once if `work` throws
+ * before it called `billed`. The error is thrown on either way.
+ *
+ * `work` calls `billed` as soon as the provider has returned a response, even
+ * an empty one: that call is paid for, so a later failure keeps the charge.
+ * Otherwise a loop of empty answers would be unlimited paid calls.
+ *
+ * Nothing is refunded when nothing was charged: an own key, or a refused
+ * charge.
  */
 export async function chargeThenRun<T>(
   deps: RefundableChargeDeps,
   charge: Omit<QuotaCharge, "amount">,
-  work: () => Promise<T>,
+  work: (billed: () => void) => Promise<T>,
 ): Promise<ChargedRun<T>> {
   // Read before the charge, so a request that crosses midnight refunds the
   // day it was charged on.
@@ -63,10 +69,11 @@ export async function chargeThenRun<T>(
   const quota = await chargeQuota(deps, charge);
   if (!quota.allowed) return { allowed: false, limit: quota.limit };
 
+  let isBilled = false;
   try {
-    return { allowed: true, value: await work() };
+    return { allowed: true, value: await work(() => (isBilled = true)) };
   } catch (error) {
-    if (!charge.own) {
+    if (!charge.own && !isBilled) {
       const refunded = await deps.refund(charge.userId, charge.kind, day)
         .catch(() => false);
       if (!refunded) {

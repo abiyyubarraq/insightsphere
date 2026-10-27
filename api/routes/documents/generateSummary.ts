@@ -138,10 +138,13 @@ export async function generateSummary(c: Context) {
 
     const run = await chargeUserQuotaForWork(
       { own: openai.own, userId: user.id, kind: "summaries" },
-      async () => {
+      async (billed) => {
         const result = await client.generateChatCompletion(
           buildSummaryRequest(input, AbortSignal.timeout(SUMMARY_TIMEOUT_MS)),
         );
+        // OpenAI has answered and billed. An empty answer or a failed save
+        // below keeps the charge, so regenerate cannot loop for free.
+        billed();
         if (!result.answer.trim()) throw new Error("The model returned an empty summary");
         await supabaseService.updateDocument(document_id, {
           summary: result.answer,

@@ -115,9 +115,11 @@ quota charge: **400** `"This file type cannot be summarized."`, **409**
 `"This document is still being processed."` when the status is not `ready`,
 **409** `"This document has no extracted text. Process it again."` when no
 `document_pages` rows exist, and **400** `"This document has no text to
-summarize."` when every page is empty. A summary that fails after the charge is
-refunded once (`api/lib/quotaRefund.ts`, a compare-and-swap on
-`usage_counters`), and the old summary stays. Process and summary answer **404** for a
+summarize."` when every page is empty. A summary that fails before OpenAI answers
+(network error, timeout, error status) is refunded once
+(`api/lib/quotaRefund.ts`, a compare-and-swap on `usage_counters`). Once OpenAI
+has answered, the unit stays charged even if the answer is empty or the save
+fails, so `regenerate` cannot loop on paid calls. The old summary stays. Process and summary answer **404** for a
 `project_id` that is not a UUID, and so does deleting a project by one. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
 

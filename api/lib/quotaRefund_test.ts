@@ -69,6 +69,39 @@ Deno.test("a failed run after a charge is refunded exactly once", async () => {
   assertEquals(refunds, [["u1", "summaries", "2026-10-27"]]);
 });
 
+// An empty answer was already billed by OpenAI. Refunding it let regenerate
+// loop on paid calls with no daily limit.
+Deno.test("a failure after the provider answered keeps the charge", async () => {
+  const { deps: d, consumed, refunds } = deps();
+
+  await assertRejects(
+    () =>
+      chargeThenRun(d, serverKey, (billed) => {
+        billed();
+        return Promise.reject(new Error("The model returned an empty summary"));
+      }),
+    Error,
+    "empty summary",
+  );
+
+  assertEquals(consumed, [["u1", "summaries", 1]]);
+  assertEquals(refunds, []);
+});
+
+// An error status or a timeout means no billed response came back.
+Deno.test("a provider failure before any response is still refunded", async () => {
+  const { deps: d, refunds } = deps();
+
+  await assertRejects(
+    () =>
+      chargeThenRun(d, serverKey, (_billed) => Promise.reject(new Error("OpenAI 429"))),
+    Error,
+    "OpenAI 429",
+  );
+
+  assertEquals(refunds, [["u1", "summaries", "2026-10-27"]]);
+});
+
 // A refund on success would make every summary free.
 Deno.test("a successful run is not refunded", async () => {
   const { deps: d, refunds } = deps();
