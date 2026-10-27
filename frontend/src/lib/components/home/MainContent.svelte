@@ -29,6 +29,7 @@
   import { isStillCurrent } from '$lib/staleResponse';
   import { readSuggestions, suggestionsKey, type SuggestionsView } from '$lib/suggestions';
   import { offTopicChips, routeLabel } from '$lib/chatRoute';
+  import { citationPageLabel } from '$lib/citationPage';
 
   let {
     leftSidebarOpen = $bindable(),
@@ -721,6 +722,7 @@
                         </div>
                         <div class="space-y-2">
                           {#each message.citations.slice(0, getVisibleCitationsCount(message.id, message.citations.length)) as citation, index}
+                            {@const page = citationPageLabel(citation.file_name, citation.page_number)}
                             <div
                               id="citation-{message.id}-{index}"
                               class="flex items-start gap-2 text-xs transition-all duration-300"
@@ -740,9 +742,9 @@
                                     {citation.file_name}
                                   </button>
                                 </div>
-                                {#if citation.page_number}
+                                {#if page}
                                   <div class="text-base-content/70">
-                                    Page {citation.page_number}
+                                    Page {page}
                                   </div>
                                 {/if}
                                 <div class="text-base-content/60 mt-1 line-clamp-2">

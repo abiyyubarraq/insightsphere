@@ -22,6 +22,7 @@ import {
   documentRefusal,
   pagesRefusal,
 } from "../../lib/summaryInput.ts";
+import { runSummary } from "../../lib/summaryRun.ts";
 
 const SUMMARY_TIMEOUT_MS = 60_000;
 
@@ -138,20 +139,19 @@ export async function generateSummary(c: Context) {
 
     const run = await chargeUserQuotaForWork(
       { own: openai.own, userId: user.id, kind: "summaries" },
-      async (billed) => {
-        const result = await client.generateChatCompletion(
-          buildSummaryRequest(input, AbortSignal.timeout(SUMMARY_TIMEOUT_MS)),
-        );
-        // OpenAI has answered and billed. An empty answer or a failed save
-        // below keeps the charge, so regenerate cannot loop for free.
-        billed();
-        if (!result.answer.trim()) throw new Error("The model returned an empty summary");
-        await supabaseService.updateDocument(document_id, {
-          summary: result.answer,
-          is_summary_exist: true,
-        });
-        return result.answer.length;
-      },
+      (billed) =>
+        runSummary({
+          generate: () =>
+            client.generateChatCompletion(
+              buildSummaryRequest(input, AbortSignal.timeout(SUMMARY_TIMEOUT_MS)),
+            ),
+          save: async (summary) => {
+            await supabaseService.updateDocument(document_id, {
+              summary,
+              is_summary_exist: true,
+            });
+          },
+        }, billed),
     );
     if (!run.allowed) return quotaExceeded(c, "summaries", run.limit);
 

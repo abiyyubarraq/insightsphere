@@ -5,6 +5,10 @@ runs on the host so Vite's hot reload behaves normally.
 
 ```bash
 cp dev/.env.example dev/.env     # Supabase URL + service role key, OpenAI key
+cp frontend/.env.example frontend/.env
+                                 # VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY (the anon
+                                 # key, not the service role key); VITE_API_URL already
+                                 # points at the local API
 ./dev/start.sh                   # qdrant + doc-parser + api, waits for healthy
 cd frontend && npm install && npm run start
 ```
