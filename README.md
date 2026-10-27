@@ -163,7 +163,8 @@ Status codes worth knowing:
 |---|---|
 | 404 | The document does not exist or belongs to someone else (process, summary, delete document); the document is not in the given project, or the project id is malformed (process, summary); a malformed project id (delete project); a `conversation_id` that is not this user's conversation in this project (chat); any unknown path |
 | 409 | Process: the document is already processing. Summary: the document already has one, unless the body has `regenerate: true` |
-| 429 | A daily quota is used up (chat and query share the chat quota; process counts documents and pages; summary counts summaries), or more than 20 requests in a minute on a rate-limited route. `error` holds a sentence meant for the user |
+| 429 | A daily quota is used up (chat and query share the chat quota; process counts documents; summary counts summaries), or more than 20 requests in a minute on a rate-limited route. `error` holds a sentence meant for the user |
+| 202 then `failed` | Process: the pages quota is charged in the background, after the 202. When it runs out, the document ends as `failed` and the sentence for the user is in `processing_error` on its `project_files` row. It is not a 429 |
 | 503 | The settings routes when `KEY_ENCRYPTION_SECRET` is not set; or the quota or the sign-in could not be checked. A 503 does not mean signed out |
 
 The burst limit covers process, summary, chat, query, suggestions, `/v1/search/query`, a semantic `/v1/searchFiles`, and saving an own key.
