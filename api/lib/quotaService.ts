@@ -8,6 +8,7 @@ import {
   toQuotaResult,
 } from "./quota.ts";
 import { chargeQuota, type QuotaCharge } from "./quotaGate.ts";
+import { chargeThenRun, takeBackOne, utcDay } from "./quotaRefund.ts";
 
 export class QuotaUnavailableError extends Error {
   constructor(cause: string) {
@@ -50,6 +51,48 @@ export async function consumeQuota(
 /** consumeQuota for a user on the server key; allowed at once for an own key. */
 export function chargeUserQuota(charge: QuotaCharge) {
   return chargeQuota({ consume: consumeQuota }, charge);
+}
+
+/**
+ * One unit of `kind` back off the user's counter for `day`. The service role
+ * bypasses RLS on usage_counters, which has no policy at all.
+ */
+export function refundQuota(
+  userId: string,
+  kind: QuotaKind,
+  day: string,
+): Promise<boolean> {
+  const counters = () =>
+    supabaseService.getClient().from("usage_counters");
+  return takeBackOne({
+    read: async () => {
+      const { data, error } = await counters().select("count")
+        .eq("user_id", userId).eq("day", day).eq("kind", kind)
+        .maybeSingle<{ count: number }>();
+      if (error) throw new Error(`Quota refund read failed: ${error.message}`);
+      return data?.count ?? null;
+    },
+    swap: async (expected, next) => {
+      const { data, error } = await counters().update({ count: next })
+        .eq("user_id", userId).eq("day", day).eq("kind", kind)
+        .eq("count", expected)
+        .select("count");
+      if (error) throw new Error(`Quota refund write failed: ${error.message}`);
+      return (data?.length ?? 0) > 0;
+    },
+  });
+}
+
+/** chargeUserQuota for one unit, refunded if `work` throws before it calls `billed`. */
+export function chargeUserQuotaForWork<T>(
+  charge: Omit<QuotaCharge, "amount">,
+  work: (billed: () => void) => Promise<T>,
+) {
+  return chargeThenRun(
+    { consume: consumeQuota, refund: refundQuota, today: utcDay },
+    charge,
+    work,
+  );
 }
 
 export function quotaExceeded(c: Context, kind: QuotaKind, limit: number | null) {

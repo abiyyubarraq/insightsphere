@@ -100,6 +100,12 @@ export interface ProjectKnowledge {
 export const OFF_TOPIC_ANSWER =
   "I can only answer from the documents in this project. Try one of these:";
 export const OFF_TOPIC_CHIPS = 3;
+/**
+ * Fixed on purpose: it is saved as the assistant message, and copying the
+ * question or the context into it put document text into the chat history.
+ */
+export const FALLBACK_ANSWER =
+  "I'm sorry, I'm having technical difficulties and could not write an answer right now. Please try again in a moment, or open the sources below.";
 
 export type RAGOpenAI = Pick<
   OpenAIClient,
@@ -586,14 +592,8 @@ export class RAGService {
       // user has to see it, so it goes up to the route instead.
       if (own && userKeyFailure(error)) throw error;
 
-      // Enhanced fallback response with context summary
-      const contextPreview = context.length > 200
-        ? context.substring(0, 200) + "..."
-        : context;
-
       return {
-        answer:
-          `I apologize, but I'm experiencing technical difficulties with the AI language models. However, I found relevant information in your documents that may help answer your question about "${query}". Here's a preview of the relevant content: "${contextPreview}". Please try again later for a complete AI-generated response, or review the citations below for detailed information.`,
+        answer: FALLBACK_ANSWER,
         model: "fallback-with-context",
         usage: {
           input_tokens: Math.ceil(context.length / 4),

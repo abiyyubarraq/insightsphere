@@ -63,6 +63,7 @@ new code — import it.
 | Context length cap | 4000 chars | same |
 | Question router | `gpt-4o-mini`, temp 0, 1.5 s timeout, 8 output tokens | `api/lib/questionRouter.ts` |
 | Client retrieval options | only `max_chunks` (1 to the default); chat also history on/off and 1-10 messages | `api/lib/queryOptions.ts` |
+| Summary input | 48 000 chars (~12k tokens) of stored page text; longer text is sampled: the first quarter of the cap, then 8 evenly spaced windows to the end | `api/lib/constants.ts`, `api/lib/summaryInput.ts` |
 | Max file size | 100 MB, enforced in the browser *and* in the API | same |
 | Max pages | 1000 | same |
 | Text layer floor | 20 runes and 10 letters per page, below which the page goes to OCR | `doc-parser/utils/text_layer.go` |
@@ -92,7 +93,7 @@ in: no admin mode, no shared secret, no test routes.
 | Method | Path |
 |---|---|
 | `POST` | `/v1/documents/process` — returns **202**, work runs in the background |
-| `POST` | `/v1/documents/generateSummary` |
+| `POST` | `/v1/documents/generateSummary` — one text-only `gpt-4o-mini` call over the `document_pages` text, the same for PDF, DOCX, TXT and Markdown; no file upload; 60 s timeout |
 | `DELETE` | `/v1/documents/:documentId` |
 | `POST` | `/v1/projects/:projectId/chat` — conversational RAG |
 | `POST` | `/v1/projects/:projectId/query` — one-shot, no history |
@@ -109,7 +110,16 @@ Chat, query, process and summary answer **429** at a daily quota or the burst
 limit, with a sentence meant for the user in `error`; suggestions and search
 only at the burst limit. Process answers **409**
 for a document already processing; summary answers **409** when one exists,
-unless the body has `regenerate: true`. Process and summary answer **404** for a
+unless the body has `regenerate: true`. Summary also answers, before the
+quota charge: **400** `"This file type cannot be summarized."`, **409**
+`"This document is still being processed."` when the status is not `ready`,
+**409** `"This document has no extracted text. Process it again."` when no
+`document_pages` rows exist, and **400** `"This document has no text to
+summarize."` when every page is empty. A summary that fails before OpenAI answers
+(network error, timeout, error status) is refunded once
+(`api/lib/quotaRefund.ts`, a compare-and-swap on `usage_counters`). Once OpenAI
+has answered, the unit stays charged even if the answer is empty or the save
+fails, so `regenerate` cannot loop on paid calls. The old summary stays. Process and summary answer **404** for a
 `project_id` that is not a UUID, and so does deleting a project by one. A **503** means the quota or Supabase
 Auth could not be checked — never read it as signed out.
 

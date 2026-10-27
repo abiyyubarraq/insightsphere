@@ -38,3 +38,9 @@ export const MAX_FILE_BYTES = FILE_CONSTRAINTS.MAX_FILE_BYTES;
 
 /** Beyond this, OCR runs longer than anyone will wait for. */
 export const MAX_PAGES = FILE_CONSTRAINTS.MAX_PAGES;
+
+/**
+ * Characters of page text sent to the summary call, about 12k tokens. A longer
+ * document is sampled down to this, so a 1000-page file cannot blow the context.
+ */
+export const SUMMARY_INPUT_MAX_CHARS = 48_000;

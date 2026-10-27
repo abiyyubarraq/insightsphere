@@ -74,7 +74,6 @@ export interface SendMessageRequest {
     message: string;
     options?: {
         max_chunks?: number;
-        similarity_threshold?: number;
         use_conversation_history?: boolean; // Include previous context
         max_history_messages?: number; // How many previous messages to include
     };

@@ -94,7 +94,7 @@ Every endpoint needs `Authorization: Bearer <supabase-jwt>`. There is no other w
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/v1/documents/process` | Start OCR and indexing. Returns 202; poll `project_files.status` |
-| `POST` | `/v1/documents/generateSummary` | Whole-document summary |
+| `POST` | `/v1/documents/generateSummary` | Whole-document summary for every supported format, written from the text processing stored (a long document is sampled); not charged to the daily quota when OpenAI fails to answer; charged once OpenAI has answered, even if the answer is empty |
 | `DELETE` | `/v1/documents/:documentId` | Removes vectors, page images, the file and the row |
 | `POST` | `/v1/projects/:projectId/chat` | Conversational RAG with citations |
 | `POST` | `/v1/projects/:projectId/query` | One-shot RAG, no history |
@@ -144,7 +144,7 @@ scripts/        security verification, schema dump
 
 ## Current state
 
-Working: upload and processing of PDF, DOCX, TXT and Markdown; OCR; chunking; embedding; per-project vector search; chat with page-level citations; document summaries; the file library; and deletion of documents and projects.
+Working: upload and processing of PDF, DOCX, TXT and Markdown; OCR; chunking; embedding; per-project vector search; chat with page-level citations; document summaries for every supported format; the file library; and deletion of documents and projects.
 
 Tests: 81 across the three languages, run in CI along with the three container image builds.
 

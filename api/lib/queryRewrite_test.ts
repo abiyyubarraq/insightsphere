@@ -152,3 +152,24 @@ Deno.test("the prompt forbids adding words the user did not use", () => {
   );
   assertEquals(messages[1].content.includes("and the second one?"), true);
 });
+
+// The failure log printed error.message, and an OpenAI error message can
+// repeat part of the API key.
+Deno.test("a failed rewrite logs status and code, never the error message", async () => {
+  const secret = "Incorrect API key provided: sk-proj-abc123***wxyz";
+  const complete: CompleteRewrite = () =>
+    Promise.reject(Object.assign(new Error(secret), { status: 401, code: "invalid_api_key" }));
+  const logged: unknown[][] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => logged.push(args);
+  try {
+    await contextualiseQuery("and the second one?", history, complete);
+  } finally {
+    console.warn = original;
+  }
+
+  assertEquals(logged.length, 1);
+  const text = JSON.stringify(logged);
+  assertEquals(text.includes("sk-proj"), false);
+  assertEquals(logged[0][1], { status: 401, code: "invalid_api_key" });
+});
