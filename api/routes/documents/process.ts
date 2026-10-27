@@ -14,6 +14,12 @@ import { openAIForUser } from "../../lib/userOpenAI.ts";
 import { type DocumentChunk, qdrantService } from "../../lib/qdrantClient.ts";
 import { MAX_FILE_BYTES, MAX_PAGES } from "../../lib/constants.ts";
 import { persistDocumentPages } from "../../lib/pageStore.ts";
+import {
+  type PageImageUploads,
+  uploadPageImages,
+  withMissingPageImages,
+} from "../../lib/pageImages.ts";
+import { replaceDocumentVectors } from "../../lib/vectorPurge.ts";
 import { currentUser } from "../../lib/auth.ts";
 import { documentInProject, projectIdShape } from "../../lib/documentAccess.ts";
 import {
@@ -300,7 +306,7 @@ async function runPipeline(
       } pages`
     );
 
-    const imagePaths: Record<number, string> = {};
+    let imageUploads: PageImageUploads = { paths: {}, missing: [] };
     if (
       parseResult.imagePaths &&
       Object.keys(parseResult.imagePaths).length > 0
@@ -311,28 +317,22 @@ async function runPipeline(
         } page images to Supabase Storage...`
       );
 
-      for (const [pageNumStr, tempPath] of Object.entries(
-        parseResult.imagePaths
-      )) {
-        const pageNum = parseInt(pageNumStr, 10);
-        try {
-          console.log(`  📖 Reading PNG from: ${tempPath}`);
-          const imageData = await Deno.readFile(tempPath);
-          console.log(`  📦 Read ${imageData.length} bytes`);
-          const storagePath = `${userId}/${project_id}/images/${document_id}/page-${pageNum}.png`;
-          const uploadedPath = await supabaseService.uploadFile(
+      imageUploads = await uploadPageImages(
+        parseResult.imagePaths,
+        (tempPath) => Deno.readFile(tempPath),
+        (pageNum, imageData) =>
+          supabaseService.uploadFile(
             imageData,
-            storagePath,
-            "image/png"
-          );
-          imagePaths[pageNum] = uploadedPath;
-          console.log(`  ✅ Page ${pageNum} PNG uploaded to: ${uploadedPath}`);
-        } catch (uploadError) {
-          console.error(
-            `  ❌ Failed to upload page ${pageNum} image:`,
-            uploadError
-          );
-        }
+            `${userId}/${project_id}/images/${document_id}/page-${pageNum}.png`,
+            "image/png",
+          ),
+      );
+      if (imageUploads.missing.length > 0) {
+        console.warn(
+          `Page images not uploaded for ${document_id}: pages ${
+            imageUploads.missing.join(", ")
+          }`,
+        );
       }
 
       // Cleanup temp image directory
@@ -347,6 +347,7 @@ async function runPipeline(
         }
       }
     }
+    const imagePaths = imageUploads.paths;
 
     // Before the Qdrant purge, so a failure here fails the document with its
     // old vectors untouched. Summaries read these rows.
@@ -377,125 +378,125 @@ async function runPipeline(
     // @ts-ignore - intentionally clearing for memory
     parseResult.text = "";
 
-    try {
-      await qdrantService.deleteByDocumentId(document_id, userId, project_id);
-    } catch (purgeError) {
-      console.warn("Could not clear previous chunks:", purgeError);
-    }
+    // No upsert runs unless every old point of this document is gone first.
+    await replaceDocumentVectors(
+      () => qdrantService.deleteByDocumentId(document_id, userId, project_id),
+      async () => {
+        console.log(
+          `📦 Processing ${totalPages} pages one at a time (memory-optimized)...`
+        );
 
-    console.log(
-      `📦 Processing ${totalPages} pages one at a time (memory-optimized)...`
+        let pageNumber = 0;
+        while (parseResult.pages.length > 0) {
+          pageNumber++;
+
+          console.log(`\n🔄 Processing page ${pageNumber}/${totalPages}...`);
+
+          const currentPage = parseResult.pages.shift()!;
+
+          const batchPages = [currentPage];
+
+          // Step 1: Create page contents for this batch
+          const pageContents: PageContent[] = [
+            {
+              pageNumber: batchPages[0].page_number,
+              text: batchPages[0].text,
+            },
+          ];
+
+          // Step 2: Chunk the batch pages (memory-optimized settings)
+          const textChunks = chunkPages(pageContents, {
+            maxChunkSize: 800,
+            overlap: 50, // Reduced from 100 for less memory
+            preserveSentences: false, // Character-based chunking is more memory efficient
+          });
+
+          console.log(
+            `  📝 Created ${textChunks.length} chunks from ${batchPages.length} pages`
+          );
+
+          pageContents.length = 0;
+
+          // A page can legitimately produce nothing: a full-page figure, a scan of
+          // a blank sheet, a separator page. Embedding an empty list and upserting
+          // it throws "No chunks provided", which used to abort the whole document
+          // — one blank page killed a fourteen-page PDF. The document-level guard
+          // after this loop still fails a file where *every* page came back empty.
+          if (textChunks.length === 0) {
+            console.log(`  ⏭️  Page ${pageNumber} produced no text, skipping`);
+            continue;
+          }
+
+          // Step 3: Generate embeddings for this batch
+          let embeddings;
+          try {
+            embeddings = await openai.client.generateBatchEmbeddings(
+              textChunks.map((chunk) => chunk.content),
+              "text-embedding-3-small"
+            );
+            totalTokens += embeddings.reduce(
+              (sum, emb) => sum + emb.usage.total_tokens,
+              0
+            );
+            console.log(`  🧠 Generated ${embeddings.length} embeddings`);
+          } catch (openaiError) {
+            console.error("❌ OpenAI embeddings failed:", openaiError);
+            throw embeddingFailedOnPage(pageNumber, openaiError);
+          }
+
+          // Step 4: Prepare document chunks for Qdrant
+          const documentChunks: DocumentChunk[] = await Promise.all(
+            textChunks.map(async (chunk, index) => ({
+              id: await createChunkId(
+                document_id,
+                globalChunkIndex + index,
+                chunk.pageNumber,
+              ),
+              content: chunk.content,
+              embedding: embeddings[index].embedding,
+              metadata: {
+                documentId: document_id,
+                projectId: project_id,
+                userId: userId,
+                pageNumber: chunk.pageNumber,
+                chunkIndex: globalChunkIndex + index,
+                fileName: document.file_name,
+                fileType: fileExtension || "unknown",
+                createdAt: new Date().toISOString(),
+                embeddingModel: embeddingModel,
+              },
+            })),
+          );
+
+          globalChunkIndex += textChunks.length;
+
+          textChunks.length = 0;
+          embeddings.length = 0;
+
+          // Step 5: Store this batch in Qdrant
+          await qdrantService.upsertChunks(documentChunks, {
+            useProjectCollection: true,
+          });
+
+          totalChunksStored += documentChunks.length;
+          console.log(`  💾 Stored ${documentChunks.length} chunks in Qdrant`);
+
+          documentChunks.length = 0;
+
+          // Hint to GC after each batch (--expose-gc required)
+          // deno-lint-ignore no-explicit-any
+          if (typeof (globalThis as any).gc === "function") {
+            // deno-lint-ignore no-explicit-any
+            (globalThis as any).gc();
+          }
+
+          // Small delay between pages to allow GC
+          if (parseResult.pages.length > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
+      },
     );
-
-    let pageNumber = 0;
-    while (parseResult.pages.length > 0) {
-      pageNumber++;
-
-      console.log(`\n🔄 Processing page ${pageNumber}/${totalPages}...`);
-
-      const currentPage = parseResult.pages.shift()!;
-
-      const batchPages = [currentPage];
-
-      // Step 1: Create page contents for this batch
-      const pageContents: PageContent[] = [
-        {
-          pageNumber: batchPages[0].page_number,
-          text: batchPages[0].text,
-        },
-      ];
-
-      // Step 2: Chunk the batch pages (memory-optimized settings)
-      const textChunks = chunkPages(pageContents, {
-        maxChunkSize: 800,
-        overlap: 50, // Reduced from 100 for less memory
-        preserveSentences: false, // Character-based chunking is more memory efficient
-      });
-
-      console.log(
-        `  📝 Created ${textChunks.length} chunks from ${batchPages.length} pages`
-      );
-
-      pageContents.length = 0;
-
-      // A page can legitimately produce nothing: a full-page figure, a scan of
-      // a blank sheet, a separator page. Embedding an empty list and upserting
-      // it throws "No chunks provided", which used to abort the whole document
-      // — one blank page killed a fourteen-page PDF. The document-level guard
-      // after this loop still fails a file where *every* page came back empty.
-      if (textChunks.length === 0) {
-        console.log(`  ⏭️  Page ${pageNumber} produced no text, skipping`);
-        continue;
-      }
-
-      // Step 3: Generate embeddings for this batch
-      let embeddings;
-      try {
-        embeddings = await openai.client.generateBatchEmbeddings(
-          textChunks.map((chunk) => chunk.content),
-          "text-embedding-3-small"
-        );
-        totalTokens += embeddings.reduce(
-          (sum, emb) => sum + emb.usage.total_tokens,
-          0
-        );
-        console.log(`  🧠 Generated ${embeddings.length} embeddings`);
-      } catch (openaiError) {
-        console.error("❌ OpenAI embeddings failed:", openaiError);
-        throw embeddingFailedOnPage(pageNumber, openaiError);
-      }
-
-      // Step 4: Prepare document chunks for Qdrant
-      const documentChunks: DocumentChunk[] = await Promise.all(
-        textChunks.map(async (chunk, index) => ({
-          id: await createChunkId(
-            document_id,
-            globalChunkIndex + index,
-            chunk.pageNumber,
-          ),
-          content: chunk.content,
-          embedding: embeddings[index].embedding,
-          metadata: {
-            documentId: document_id,
-            projectId: project_id,
-            userId: userId,
-            pageNumber: chunk.pageNumber,
-            chunkIndex: globalChunkIndex + index,
-            fileName: document.file_name,
-            fileType: fileExtension || "unknown",
-            createdAt: new Date().toISOString(),
-            embeddingModel: embeddingModel,
-          },
-        })),
-      );
-
-      globalChunkIndex += textChunks.length;
-
-      textChunks.length = 0;
-      embeddings.length = 0;
-
-      // Step 5: Store this batch in Qdrant
-      await qdrantService.upsertChunks(documentChunks, {
-        useProjectCollection: true,
-      });
-
-      totalChunksStored += documentChunks.length;
-      console.log(`  💾 Stored ${documentChunks.length} chunks in Qdrant`);
-
-      documentChunks.length = 0;
-
-      // Hint to GC after each batch (--expose-gc required)
-      // deno-lint-ignore no-explicit-any
-      if (typeof (globalThis as any).gc === "function") {
-        // deno-lint-ignore no-explicit-any
-        (globalThis as any).gc();
-      }
-
-      // Small delay between pages to allow GC
-      if (parseResult.pages.length > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    }
 
     const storedChunkCount = totalChunksStored;
     console.log(
@@ -515,7 +516,7 @@ async function runPipeline(
       );
     }
 
-    const updatedMetadata = {
+    const updatedMetadata = withMissingPageImages({
       ...(document.metadata || {}),
       chunkCount: storedChunkCount,
       pages: parseMetadata.pageCount,
@@ -525,7 +526,7 @@ async function runPipeline(
       extractionMethod: parseMetadata.extractionMethod,
       textLayerPages: parseMetadata.textLayerPages,
       ocrPages: parseMetadata.ocrPages,
-    };
+    }, imageUploads.missing);
 
     await supabaseService.updateDocument(document_id, {
       status: "ready",

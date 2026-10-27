@@ -1,5 +1,6 @@
 import { QdrantClient } from "qdrant-js";
 import { SEARCH_DEFAULTS } from "./constants.ts";
+import { purgeFromCollections } from "./vectorPurge.ts";
 
 export interface QdrantConfig {
   url: string;
@@ -320,8 +321,11 @@ export class QdrantService {
         collections.push(this.getProjectCollectionName(userId, projectId));
       }
 
-      for (const collectionName of collections) {
-        try {
+      await purgeFromCollections(
+        collections,
+        async () =>
+          (await this.client.getCollections()).collections.map((c) => c.name),
+        async (collectionName) => {
           await this.client.delete(collectionName, {
             wait: true,
             filter: {
@@ -336,14 +340,8 @@ export class QdrantService {
           console.log(
             `Successfully deleted chunks for document: ${documentId} from ${collectionName}`,
           );
-        } catch (error) {
-          // Collection might not exist, continue with next one
-          console.warn(
-            `Could not delete from collection ${collectionName}:`,
-            error,
-          );
-        }
-      }
+        },
+      );
     } catch (error) {
       console.error("Failed to delete document chunks:", error);
       throw new Error(
