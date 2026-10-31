@@ -50,8 +50,8 @@
     "services": [
       {
         "name": "parser",
-        "cmd": "docker build -q -t ship-parser-{job} doc-parser && docker run --rm --name ship-parser-{job} -p {port:parser}:8080 -e PORT=8080 -e GIN_MODE=debug -e OCR_LANGUAGES=eng+ind -v ship-tmp-{job}:/tmp ship-parser-{job}",
-        "stop": "docker rm -f ship-parser-{job}",
+        "cmd": "docker network create ship-{job} >/dev/null 2>&1; docker build -q -t ship-parser-{job} doc-parser && docker run --rm --name ship-parser-{job} --network ship-{job} -p {port:parser}:8080 -e PORT=8080 -e GIN_MODE=debug -e OCR_LANGUAGES=eng+ind -v ship-tmp-{job}:/tmp ship-parser-{job}",
+        "stop": "docker rm -f ship-parser-{job}; docker network rm ship-{job} >/dev/null 2>&1 || true",
         "port": 18080,
         "when": [
           "doc-parser/**",
@@ -63,9 +63,22 @@
         "readyTimeout": 900
       },
       {
+        "name": "qdrant",
+        "cmd": "docker network create ship-{job} >/dev/null 2>&1; docker run --rm --name ship-qdrant-{job} --network ship-{job} -p {port:qdrant}:6333 qdrant/qdrant:v1.20.0",
+        "stop": "docker rm -f ship-qdrant-{job}; docker network rm ship-{job} >/dev/null 2>&1 || true",
+        "port": 16333,
+        "when": [
+          "api/**",
+          "shared/**",
+          "doc-parser/**"
+        ],
+        "readyPath": "/readyz",
+        "readyTimeout": 180
+      },
+      {
         "name": "api",
-        "cmd": "docker run --rm --name ship-api-{job} --add-host=host.docker.internal:host-gateway -p {port:api}:8000 --env-file dev/.env -e PORT=8000 -e QDRANT_URL=http://host.docker.internal:6333 -e DOC_PARSER_URL={dockerurl:parser} -e CORS_ORIGINS=http://localhost:5173 -v \"$(pwd -W 2>/dev/null || pwd)/api:/app\" -v \"$(pwd -W 2>/dev/null || pwd)/shared:/shared\" -v ship-tmp-{job}:/tmp -w /app denoland/deno:2.9.8 deno run --allow-net --allow-env --allow-read --allow-write main.ts",
-        "stop": "docker rm -f ship-api-{job}; docker volume rm -f ship-tmp-{job} >/dev/null 2>&1 || true",
+        "cmd": "docker network create ship-{job} >/dev/null 2>&1; docker run --rm --name ship-api-{job} --network ship-{job} --add-host=host.docker.internal:host-gateway -p {port:api}:8000 --env-file dev/.env -e PORT=8000 -e QDRANT_URL=http://ship-qdrant-{job}:6333 -e DOC_PARSER_URL=http://ship-parser-{job}:8080 -e CORS_ORIGINS=http://localhost:5173 -v \"$(pwd -W 2>/dev/null || pwd)/api:/app\" -v \"$(pwd -W 2>/dev/null || pwd)/shared:/shared\" -v ship-tmp-{job}:/tmp -w /app denoland/deno:2.9.8 deno run --allow-net --allow-env --allow-read --allow-write main.ts",
+        "stop": "docker rm -f ship-api-{job}; docker volume rm -f ship-tmp-{job} >/dev/null 2>&1 || true; docker network rm ship-{job} >/dev/null 2>&1 || true",
         "port": 18000,
         "when": [
           "api/**",
@@ -132,6 +145,13 @@
   "laneWhen": {
     "web": [
       "frontend/src/**"
+    ]
+  },
+  "guard": {
+    "block": [
+      "(?:^|[;&|(\\n]\\s*)(?:(?:env(?:\\s+-u\\s+\\S+)*|timeout\\s+\\S+|nohup|sudo|[A-Za-z_]\\w*=\\S*)\\s+)*docker\\s+(stop|rm|kill|restart|pause)\\b[^|;&\\n]*\\bdev[-_]",
+      "(?:^|[;&|(\\n]\\s*)(?:(?:bash|sh|zsh)\\s+|\\./)?(?:\\S*/)?dev/reset\\.sh\\b|\\bcd\\s+\\S*\\bdev/?\\s*&&\\s*(?:(?:bash|sh|zsh)\\s+|\\./)reset\\.sh\\b",
+      "\\bcurl\\b[^|;&\\n]*(-X\\s*|--request\\s+)DELETE[^|;&\\n]*:6333\\b"
     ]
   }
 }
