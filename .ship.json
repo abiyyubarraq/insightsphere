@@ -162,5 +162,51 @@
   },
   "verifyLeases": [
     "openai"
-  ]
+  ],
+  "proofWhen": {
+    "qdrant-failure": {
+      "when": [
+        "api/lib/qdrantClient.ts",
+        "api/lib/vectorPurge.ts",
+        "api/lib/documentDelete.ts",
+        "api/lib/projectDelete.ts",
+        "api/routes/documents/**",
+        "api/routes/projects/**"
+      ],
+      "how": "on ship-qdrant-{job}: point counts before and after; then once stopped and once paused (docker stop / pause ship-qdrant-{job}) — the API answers an error, never hangs or reports success"
+    },
+    "reprocess": {
+      "when": [
+        "api/routes/documents/process.ts",
+        "api/lib/vectorPurge.ts",
+        "api/lib/chunkText.ts"
+      ],
+      "how": "upload a 3-page document, reprocess it as 1 page, search a phrase from page 3: 0 points and 0 document_pages rows for the removed pages"
+    },
+    "citations": {
+      "when": [
+        "api/lib/ragService.ts",
+        "api/lib/citation*.ts",
+        "api/lib/questionRouter.ts",
+        "api/lib/chatService.ts",
+        "api/lib/chatExchange.ts",
+        "api/routes/chat/**"
+      ],
+      "how": "a 4-turn chat on a ship-test project with 3 or more documents (openai lease): every citation number is at most the number of sources shown; the same questions on the master API for comparison"
+    },
+    "parser": {
+      "when": [
+        "doc-parser/**"
+      ],
+      "how": "run the parser on saved real documents of each kind (text PDF, scanned PDF, Indonesian, DOCX, MD, TXT) and compare with the expected text"
+    },
+    "fail-on-base": {
+      "when": [
+        "**/*_test.ts",
+        "**/*.test.ts",
+        "**/*_test.go"
+      ],
+      "how": "each new or changed test fails on the merge base (copy it onto a worktree of the base and run it)"
+    }
+  }
 }
