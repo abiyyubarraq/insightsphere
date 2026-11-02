@@ -126,11 +126,14 @@
     "supabase/migrations/**"
   ],
   "rules": [
-    "Never recreate a Qdrant collection. Search with useProjectCollection: true.",
+    "Never delete or recreate a collection in the shared dev Qdrant (:6333). The job's own ship-qdrant-{job} starts empty and may be used freely. Search with useProjectCollection: true.",
     "No embedding fallback. Never log document text.",
     "Svelte 5 runes and DaisyUI tokens only; no inline handlers (CSP).",
     "Any change to auth, RLS policies or API access checks: run ./scripts/verify-security.sh with the dev stack up and put its result in the PR.",
-    "New migrations need the Spec to say so; they are applied by the user, never by an agent."
+    "New migrations need the Spec to say so; they are applied by the user, never by an agent.",
+    "Verify: create a new project named ship-test-<ticket id> for the run and delete it at the end; never change data that existed before the run.",
+    "Never store the server's OpenAI key on any account. A 429 or quota error is BLOCKED — environment: report it, never swap keys.",
+    "To test a Qdrant failure, stop or pause ship-qdrant-{job}, never dev-qdrant-1."
   ],
   "requires": [
     {
@@ -153,5 +156,11 @@
       "(?:^|[;&|(\\n]\\s*)(?:(?:bash|sh|zsh)\\s+|\\./)?(?:\\S*/)?dev/reset\\.sh\\b|\\bcd\\s+\\S*\\bdev/?\\s*&&\\s*(?:(?:bash|sh|zsh)\\s+|\\./)reset\\.sh\\b",
       "\\bcurl\\b[^|;&\\n]*(-X\\s*|--request\\s+)DELETE[^|;&\\n]*:6333\\b"
     ]
-  }
+  },
+  "leases": {
+    "openai": "live OpenAI calls (chat, embeddings, router): one job at a time, shared daily quota"
+  },
+  "verifyLeases": [
+    "openai"
+  ]
 }
